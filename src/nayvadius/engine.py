@@ -15,72 +15,80 @@ class Engine:
     def run(self, input_path, offset=0, limit=0):
         return self.run_documents(load_jsonl(input_path), offset=offset, limit=limit)
 
-    def run_documents(self, docs, offset=0, limit=0):
+    def _select(self, items, offset, limit):
         if offset < 0:
             raise ValueError("offset must be >= 0")
         if limit < 0:
             raise ValueError("limit must be >= 0")
-
-        docs = list(docs)
+        items = list(items)
         if offset:
-            docs = docs[offset:]
+            items = items[offset:]
         if limit:
-            docs = docs[:limit]
+            items = items[:limit]
+        return items
 
-        processed = skipped = errors = 0
-        llm_calls = cache_hits = llm_fallbacks = 0
+    def _persist(self, result, stats):
+        doc = result.document
+        try:
+            if not upsert_document(doc):
+                stats["skipped"] += 1
+                return
+            save_result(result)
+            write_markdown(result, self.output)
+            write_entities(result.entities, self.output)
+            stats["processed"] += 1
+        except Exception as exc:
+            stats["errors"] += 1
+            with connect() as db:
+                db.execute("UPDATE documents SET status='error' WHERE id=?", (doc.id,))
+            print("ERROR", doc.id, exc)
+
+    def run_documents(self, docs, offset=0, limit=0):
+        docs = self._select(docs, offset, limit)
+        stats = {"selected": len(docs), "offset": offset, "limit": limit,
+                 "processed": 0, "skipped": 0, "errors": 0,
+                 "llm_calls": 0, "cache_hits": 0, "llm_fallbacks": 0}
 
         for doc in docs:
             try:
-                if not upsert_document(doc):
-                    skipped += 1
-                    continue
-
                 result = None
                 if self.llm.key:
                     try:
                         key = self.llm.cache_key(doc.title, doc.content)
                         obj = cache_get(key)
                         if obj is not None:
-                            cache_hits += 1
+                            stats["cache_hits"] += 1
                         else:
-                            llm_calls += 1
+                            stats["llm_calls"] += 1
                             obj = self.llm.analyze(doc.title, doc.content)
                             if obj:
                                 cache_put(key, obj)
                         if obj:
                             result = parse_llm(obj, doc)
                     except Exception as exc:
-                        llm_fallbacks += 1
+                        stats["llm_fallbacks"] += 1
                         print("LLM fallback", doc.id, exc)
-
                 if result is None:
                     result = process_document(doc)
-
-                save_result(result)
-                write_markdown(result, self.output)
-                write_entities(result.entities, self.output)
-                processed += 1
+                self._persist(result, stats)
             except Exception as exc:
-                errors += 1
-                with connect() as db:
-                    db.execute(
-                        "UPDATE documents SET status='error' WHERE id=?", (doc.id,)
-                    )
+                stats["errors"] += 1
                 print("ERROR", doc.id, exc)
 
+        return self._finish(stats)
+
+    def run_processed(self, records, offset=0, limit=0):
+        records = self._select(records, offset, limit)
+        stats = {"selected": len(records), "offset": offset, "limit": limit,
+                 "processed": 0, "skipped": 0, "errors": 0,
+                 "llm_calls": 0, "cache_hits": 0, "llm_fallbacks": 0,
+                 "abraham_records": len(records)}
+        for result in records:
+            self._persist(result, stats)
+        return self._finish(stats)
+
+    def _finish(self, stats):
         with connect() as db:
             write_graph(db, self.output)
-
-        return {
-            "selected": len(docs),
-            "offset": offset,
-            "limit": limit,
-            "processed": processed,
-            "skipped": skipped,
-            "errors": errors,
-            "llm_calls": llm_calls,
-            "cache_hits": cache_hits,
-            "llm_fallbacks": llm_fallbacks,
-            "db": status(),
-        }
+        stats["db"] = status()
+        return stats
