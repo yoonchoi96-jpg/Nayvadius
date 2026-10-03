@@ -1,6 +1,6 @@
 from .io import load_jsonl
 from .processor import process_document, parse_llm
-from .store import upsert_document, save_result
+from .store import upsert_document, save_result, result_is_current
 from .db import cache_get, cache_put, connect, status, prune_orphan_entities
 from .providers import LLMProvider
 from .writer import write_markdown, write_entities, write_entities_from_db, write_entity_moc
@@ -30,6 +30,9 @@ class Engine:
     def _persist(self, result, stats):
         doc = result.document
         try:
+            if stats.get("force_refresh", False) and result_is_current(result):
+                stats["skipped"] += 1
+                return
             if not upsert_document(doc, force=stats.get("force_refresh", False)):
                 stats["skipped"] += 1
                 return
