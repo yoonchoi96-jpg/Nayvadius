@@ -72,3 +72,20 @@ def test_merge_entity_rewires_relations_and_evidence(tmp_path: Path, monkeypatch
     assert entity == [("Apple Inc.",)]
     assert rel == [("Apple Inc.", "Beats", 0.9)]
     assert ev == [("Apple Inc.",)]
+
+
+def test_abraham_refreshes_enrichment_when_content_is_unchanged(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("nayvadius.config.settings.state_path", str(tmp_path / "state.db"))
+    from nayvadius.store import upsert_document
+    doc = Document("same", "Same", "unchanged")
+    first = ProcessedDocument(doc, "first", [Entity("Apple Inc.", "Companies", 0.8, ("Apple",))], ["source/test"])
+    second = ProcessedDocument(doc, "second", [Entity("Microsoft", "Companies", 0.9, ())], ["source/test"])
+    assert upsert_document(doc) is True
+    save_result(first)
+    assert upsert_document(doc, force=True) is True
+    save_result(second)
+    with connect() as db:
+        names = db.execute("SELECT name FROM entities ORDER BY name").fetchall()
+        payload = db.execute("SELECT payload FROM results WHERE document_id='same'").fetchone()[0]
+    assert names == [("Apple Inc.",), ("Microsoft",)]
+    assert '"summary": "second"' in payload
