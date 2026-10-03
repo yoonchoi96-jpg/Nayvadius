@@ -1,17 +1,22 @@
 from .io import load_jsonl
-from .processor import process_document
+from .processor import process_document, parse_llm
 from .store import upsert_document, save_result
-from .writer import write_markdown
-from .config import settings
-
-def run(input_path="data/input.jsonl", output_path=None) -> int:
-    output_path = output_path or settings.output_path
-    processed = 0
-    for doc in load_jsonl(input_path):
-        if not upsert_document(doc):
-            continue
-        result = process_document(doc)
-        save_result(result)
-        write_markdown(result, output_path)
-        processed += 1
-    return processed
+from .db import cache_get, cache_put
+from .providers import LLMProvider
+from .writer import write_markdown, write_entities
+class Engine:
+ def __init__(self,output_path='output'): self.output=output_path; self.llm=LLMProvider()
+ def run(self,input_path):
+  processed=skipped=errors=0
+  for doc in load_jsonl(input_path):
+   try:
+    if not upsert_document(doc): skipped+=1; continue
+    result=None
+    if self.llm.key:
+     key=self.llm.cache_key(doc.title,doc.content); obj=cache_get(key)
+     if obj is None: obj=self.llm.analyze(doc.title,doc.content); cache_put(key,obj) if obj else None
+     if obj: result=parse_llm(obj,doc)
+    if result is None: result=process_document(doc)
+    save_result(result); write_markdown(result,self.output); write_entities(result.entities,self.output); processed+=1
+   except Exception as exc: errors+=1; print('ERROR',doc.id,exc)
+  return {'processed':processed,'skipped':skipped,'errors':errors}
