@@ -35,3 +35,43 @@ def save_entity_alias(alias, canonical_name, entity_type):
 
 def status():
  with connect() as c: return {t:c.execute('SELECT COUNT(*) FROM '+t).fetchone()[0] for t in ('documents','entities','relations','document_relations','evidence','relation_evidence','entity_aliases','llm_cache')}
+
+
+def merge_entity(canonical_name, duplicate_name, entity_type):
+ with connect() as db:
+  if canonical_name == duplicate_name:
+   return False
+  keep = db.execute("SELECT aliases,confidence FROM entities WHERE name=? AND entity_type=?", (canonical_name,entity_type)).fetchone()
+  dup = db.execute("SELECT aliases,confidence FROM entities WHERE name=? AND entity_type=?", (duplicate_name,entity_type)).fetchone()
+  if not dup:
+   return False
+  aliases = set(x.strip() for x in ((keep[0] if keep else "") or "").split(",") if x.strip())
+  aliases.update(x.strip() for x in ((dup[0] or "")).split(",") if x.strip())
+  aliases.discard(canonical_name)
+  aliases.add(duplicate_name)
+  confidence = max(float(keep[1]) if keep else 0.0, float(dup[1]))
+  db.execute("INSERT INTO entities(name,entity_type,aliases,confidence) VALUES(?,?,?,?) ON CONFLICT(name,entity_type) DO UPDATE SET aliases=excluded.aliases,confidence=excluded.confidence",
+             (canonical_name,entity_type,",".join(sorted(aliases,key=lambda x:(x.casefold(),x))),confidence))
+  db.execute("UPDATE document_entities SET entity_name=? WHERE entity_name=? AND entity_type=?", (canonical_name,duplicate_name,entity_type))
+  db.execute("UPDATE relations SET source_name=? WHERE source_name=?", (canonical_name,duplicate_name))
+  db.execute("UPDATE relations SET target_name=? WHERE target_name=?", (canonical_name,duplicate_name))
+  db.execute("UPDATE document_relations SET source_name=? WHERE source_name=?", (canonical_name,duplicate_name))
+  db.execute("UPDATE document_relations SET target_name=? WHERE target_name=?", (canonical_name,duplicate_name))
+  db.execute("UPDATE relation_evidence SET source_name=? WHERE source_name=?", (canonical_name,duplicate_name))
+  db.execute("UPDATE relation_evidence SET target_name=? WHERE target_name=?", (canonical_name,duplicate_name))
+  db.execute("DELETE FROM entity_aliases WHERE canonical_name=? AND entity_type=?", (duplicate_name,entity_type))
+  db.execute("INSERT OR IGNORE INTO entity_aliases(alias,canonical_name,entity_type) VALUES(?,?,?)", (canonical_name.casefold(),canonical_name,entity_type))
+  for alias in aliases:
+   db.execute("INSERT OR IGNORE INTO entity_aliases(alias,canonical_name,entity_type) VALUES(?,?,?)", (alias.casefold(),canonical_name,entity_type))
+  db.execute("DELETE FROM entities WHERE name=? AND entity_type=?", (duplicate_name,entity_type))
+  db.execute("""DELETE FROM relations WHERE rowid NOT IN (
+      SELECT MIN(rowid) FROM relations GROUP BY source_name,relation,target_name
+  )""")
+  db.execute("""DELETE FROM document_relations WHERE rowid NOT IN (
+      SELECT MIN(rowid) FROM document_relations GROUP BY document_id,source_name,relation,target_name
+  )""")
+  db.execute("""DELETE FROM relation_evidence WHERE rowid NOT IN (
+      SELECT MIN(rowid) FROM relation_evidence
+      GROUP BY document_id,source_name,relation,target_name,evidence_document_id
+  )""")
+  return True
