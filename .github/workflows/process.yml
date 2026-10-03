@@ -1,33 +1,33 @@
-name: Nayvadius Process
-
+name: Nayvadius Knowledge Pipeline
 on:
-  workflow_dispatch:
-    inputs:
-      input_path:
-        description: JSONL input path
-        required: false
-        default: data/input.example.jsonl
-  schedule:
-    - cron: "17 2 * * *"
-
+ workflow_dispatch:
+  inputs:
+   input_path:
+    required:false
+    default:data/input.example.jsonl
+ schedule:
+  - cron: '17 2 * * *'
 permissions:
-  contents: write
-
+ contents: write
 jobs:
-  process:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install -e .
-      - name: Process incrementally
-        run: python -m nayvadius.cli process --input "${{ inputs.input_path || 'data/input.example.jsonl' }}"
-      - name: Commit generated knowledge
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add output/ data/*.db || true
-          git diff --cached --quiet || git commit -m "chore: update processed knowledge"
-          git push
+ process:
+  runs-on: ubuntu-latest
+  steps:
+   - uses: actions/checkout@v4
+   - uses: actions/setup-python@v5
+     with:
+      python-version: '3.12'
+   - run: pip install -e .
+   - name: Process knowledge
+     env:
+      NAYVADIUS_LLM_API_KEY: ${{ secrets.NAYVADIUS_LLM_API_KEY }}
+      NAYVADIUS_LLM_BASE_URL: ${{ secrets.NAYVADIUS_LLM_BASE_URL }}
+      NAYVADIUS_LLM_MODEL: ${{ secrets.NAYVADIUS_LLM_MODEL }}
+     run: python -m nayvadius.cli process --input "${{ inputs.input_path || 'data/input.example.jsonl' }}"
+   - name: Commit knowledge
+     run: |
+      git config user.name 'nayvadius-bot'
+      git config user.email 'actions@users.noreply.github.com'
+      git add output data/*.db || true
+      git diff --cached --quiet || git commit -m 'chore: update knowledge graph'
+      git push
