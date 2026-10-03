@@ -28,6 +28,16 @@ def write_graph(db, root):
         }
 
     by_name = _canonical_id(rows)
+    evidence_map = {}
+    for source_name, relation, target_name, evidence_id, status in db.execute(
+        "SELECT source_name,relation,target_name,evidence_document_id,status "
+        "FROM relation_evidence"
+    ):
+        evidence_map.setdefault((source_name, relation, target_name), []).append({
+            "document_id": evidence_id,
+            "status": status,
+        })
+
     edges = []
     seen = set()
     for source, relation, target, confidence in db.execute(
@@ -43,13 +53,16 @@ def write_graph(db, root):
             "target": target_ids[0],
             "confidence": confidence,
         }
+        evidence = evidence_map.get((source, relation, target), [])
+        if evidence:
+            edge["evidence"] = evidence
         key = (edge["source"], relation, edge["target"])
         if key not in seen:
             seen.add(key)
             edges.append(edge)
 
     payload = {
-        "schema_version": "1",
+        "schema_version": "2",
         "nodes": list(nodes.values()),
         "edges": edges,
     }
