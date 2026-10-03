@@ -65,3 +65,30 @@ Abraham's extracted knowledge is persisted directly; Nayvadius does not spend an
 - SQLite state/cache.
 - Obsidian output first; other destinations can be added later.
 - Cloud infrastructure is optional until actual workload requires it.
+
+
+## Abraham export handoff
+
+Recommended path:
+
+`data/abraham_export.jsonl`
+
+One JSON object per line. Abraham remains responsible for Readwise/Reader collection, rating, translation, entities, and relations. Nayvadius consumes the enriched records without re-running extraction.
+
+Required fields:
+- `id`
+- `content`
+
+Recommended fields:
+- `title`
+- `source`
+- `metadata.readwise_id`
+- `tags`
+- `translation_ko`
+- `entities`
+- `relations`
+- `related_ids`
+- `importance`
+- `document_type`
+
+Processing is incremental by document content hash. Workflow batches can use `offset` and `limit` when a large Abraham export is introduced.
