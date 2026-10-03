@@ -1,6 +1,25 @@
 from .db import connect
 from .hash import content_hash
 import json
+import re
+
+def _norm_alias(value):
+    value = str(value or "").strip().casefold()
+    return re.sub(r"[\s\u3000]+", " ", value)
+
+def _canonical_entity(db, entity):
+    matches = []
+    for value in [entity.name, *entity.aliases]:
+        alias = _norm_alias(value)
+        if alias:
+            matches.extend(db.execute(
+                "SELECT canonical_name,entity_type FROM entity_aliases WHERE alias=?",
+                (alias,),
+            ).fetchall())
+    unique = list(dict.fromkeys(matches))
+    if len(unique) == 1 and unique[0][1] == entity.entity_type:
+        return unique[0][0]
+    return entity.name
 
 def upsert_document(doc):
     h = content_hash(doc.content)
@@ -35,27 +54,42 @@ def save_result(result):
         db.execute("DELETE FROM document_entities WHERE document_id=?", (result.document.id,))
         db.execute("DELETE FROM document_relations WHERE document_id=?", (result.document.id,))
 
+        canonical = {}
+        for e in result.entities:
+            name = _canonical_entity(db, e)
+            canonical[e.name] = name
+            db.execute(
+                "INSERT OR REPLACE INTO entities VALUES(?,?,?,?)",
+                (name, e.entity_type, ",".join(e.aliases), e.confidence),
+            )
+            db.execute(
+                "INSERT OR REPLACE INTO entity_aliases(alias,canonical_name,entity_type) VALUES(?,?,?)",
+                (_norm_alias(name), name, e.entity_type),
+            )
+            for alias in e.aliases:
+                if _norm_alias(alias):
+                    db.execute(
+                        "INSERT OR REPLACE INTO entity_aliases(alias,canonical_name,entity_type) VALUES(?,?,?)",
+                        (_norm_alias(alias), name, e.entity_type),
+                    )
+            db.execute(
+                "INSERT OR REPLACE INTO document_entities VALUES(?,?,?,?)",
+                (result.document.id, name, e.entity_type, e.confidence),
+            )
+
         for x in result.relations:
+            source = canonical.get(x.source, x.source)
+            target = canonical.get(x.target, x.target)
             db.execute(
                 "INSERT OR REPLACE INTO relations VALUES(?,?,?,?)",
-                (x.source, x.relation, x.target, x.confidence),
+                (source, x.relation, target, x.confidence),
             )
             db.execute(
                 "INSERT OR REPLACE INTO document_relations VALUES(?,?,?,?,?)",
-                (result.document.id, x.source, x.relation, x.target, x.confidence),
+                (result.document.id, source, x.relation, target, x.confidence),
             )
 
         db.execute("INSERT OR REPLACE INTO results VALUES(?,?)", (result.document.id, payload))
-
-        for e in result.entities:
-            db.execute(
-                "INSERT OR REPLACE INTO entities VALUES(?,?,?,?)",
-                (e.name, e.entity_type, ",".join(e.aliases), e.confidence),
-            )
-            db.execute(
-                "INSERT OR REPLACE INTO document_entities VALUES(?,?,?,?)",
-                (result.document.id, e.name, e.entity_type, e.confidence),
-            )
 
         db.execute(
             """DELETE FROM relations
