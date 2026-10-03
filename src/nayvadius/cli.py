@@ -1,13 +1,16 @@
 import argparse
+from .engine import run
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="nayvadius")
     parser.add_argument("command", choices=["status", "process"])
+    parser.add_argument("--input", default="data/input.jsonl")
+    parser.add_argument("--output", default=None)
     args = parser.parse_args()
     if args.command == "status":
-        print("Nayvadius V0: ready")
+        print("Nayvadius V3: ready")
     else:
-        print("Nayvadius V0: processing pipeline not connected yet")
+        print(f"processed={run(args.input, args.output)}")
 
 if __name__ == "__main__":
     main()
