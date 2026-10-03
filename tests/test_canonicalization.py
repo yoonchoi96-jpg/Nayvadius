@@ -20,3 +20,4 @@ def test_aliases_canonicalize_same_entity(tmp_path: Path, monkeypatch):
     assert ("apple", "Apple Inc.", "Companies") in aliases
     assert ("apple inc.", "Apple Inc.", "Companies") in aliases
     assert relation == ("Apple Inc.", "Apple Inc.")
+
