@@ -88,9 +88,9 @@ class Engine:
         return self._finish(stats)
 
     def _finish(self, stats):
+        prune_orphan_entities()
         with connect() as db:
             write_graph(db, self.output)
-            prune_orphan_entities()
             write_entities_from_db(db, self.output)
             write_entity_moc(db, self.output)
         stats["db"] = status()
