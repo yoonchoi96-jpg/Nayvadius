@@ -9,15 +9,13 @@ def _canonical_id(rows, db):
             by_name[name].append(node_id)
         for alias in (aliases or "").split(","):
             alias = alias.strip()
-            if alias:
-                if node_id not in by_name.setdefault(alias, []):
+            if alias and node_id not in by_name.setdefault(alias, []):
                 by_name[alias].append(node_id)
     for alias, canonical_name, entity_type in db.execute(
         "SELECT alias,canonical_name,entity_type FROM entity_aliases"
     ):
         node_id = f"{entity_type}:{canonical_name}"
-        if node_id in by_name.get(canonical_name, []):
-            if node_id not in by_name.setdefault(alias, []):
+        if node_id in by_name.get(canonical_name, []) and node_id not in by_name.setdefault(alias, []):
             by_name[alias].append(node_id)
     return by_name
 
