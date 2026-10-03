@@ -1,7 +1,7 @@
 from .io import load_jsonl
 from .processor import process_document, parse_llm
 from .store import upsert_document, save_result
-from .db import cache_get, cache_put, connect, status
+from .db import cache_get, cache_put, connect, status, prune_orphan_entities
 from .providers import LLMProvider
 from .writer import write_markdown, write_entities, write_entities_from_db, write_entity_moc
 from .graph import write_graph
@@ -90,6 +90,7 @@ class Engine:
     def _finish(self, stats):
         with connect() as db:
             write_graph(db, self.output)
+            prune_orphan_entities()
             write_entities_from_db(db, self.output)
             write_entity_moc(db, self.output)
         stats["db"] = status()
