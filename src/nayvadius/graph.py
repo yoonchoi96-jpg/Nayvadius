@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-def _canonical_id(rows):
+def _canonical_id(rows, db):
     by_name = {}
     for name, entity_type, aliases, confidence in rows:
         node_id = f"{entity_type}:{name}"
@@ -10,6 +10,12 @@ def _canonical_id(rows):
             alias = alias.strip()
             if alias:
                 by_name.setdefault(alias, []).append(node_id)
+    for alias, canonical_name, entity_type in db.execute(
+        "SELECT alias,canonical_name,entity_type FROM entity_aliases"
+    ):
+        node_id = f"{entity_type}:{canonical_name}"
+        if node_id in by_name.get(canonical_name, []):
+            by_name.setdefault(alias, []).append(node_id)
     return by_name
 
 def write_graph(db, root):
@@ -27,7 +33,7 @@ def write_graph(db, root):
             "confidence": confidence,
         }
 
-    by_name = _canonical_id(rows)
+    by_name = _canonical_id(rows, db)
     evidence_map = {}
     for source_name, relation, target_name, evidence_id, status in db.execute(
         "SELECT source_name,relation,target_name,evidence_document_id,status "
