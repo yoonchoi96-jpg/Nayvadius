@@ -3,8 +3,8 @@ on:
  workflow_dispatch:
   inputs:
    input_path:
-    required:false
-    default:data/input.example.jsonl
+    required: false
+    default: data/input.example.jsonl
  schedule:
   - cron: '17 2 * * *'
 permissions:
