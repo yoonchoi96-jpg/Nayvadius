@@ -42,11 +42,11 @@ def _resolve_relation_endpoint(db, value):
     unique = list(dict.fromkeys(rows))
     return unique[0][0] if len(unique) == 1 else value
 
-def upsert_document(doc):
+def upsert_document(doc, force=False):
     h = content_hash(doc.content)
     with connect() as db:
         old = db.execute("SELECT content_hash FROM documents WHERE id=?", (doc.id,)).fetchone()
-        if old and old[0] == h:
+        if old and old[0] == h and not force:
             return False
         db.execute(
             """INSERT INTO documents(id,title,content_hash,source,status)
