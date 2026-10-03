@@ -17,3 +17,19 @@ def write_entities(entities,root):
  for e in entities:
   p=root/safe(e.entity_type); p.mkdir(parents=True,exist_ok=True); out=p/(safe(e.name)+'.md'); aliases=', '.join(yaml_scalar(x) for x in e.aliases)
   write_atomic(out,'---\nname: '+yaml_scalar(e.name)+'\ntype: '+yaml_scalar(e.entity_type)+'\naliases: ['+aliases+']\n---\n\n# '+e.name+'\n')
+
+
+def write_entity_moc(db, root):
+    root = Path(root) / "entities"
+    root.mkdir(parents=True, exist_ok=True)
+    rows = list(db.execute("SELECT name,entity_type,aliases,confidence FROM entities ORDER BY entity_type,name"))
+    lines = ["---", "title: \"Entity Index\"", "type: \"MOC\"", "---", "", "# Entity Index", ""]
+    current = None
+    for name, entity_type, aliases, confidence in rows:
+        if entity_type != current:
+            if current is not None:
+                lines.append("")
+            lines.extend([f"## {entity_type}", ""])
+            current = entity_type
+        lines.append(f"- [[{name}]] — confidence: {confidence:.3f}")
+    write_atomic(root / "_Entity Index.md", "\n".join(lines) + "\n")
