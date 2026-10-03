@@ -2,6 +2,7 @@ from .db import connect
 from .hash import content_hash
 import json
 import re
+import hashlib
 
 def _norm_alias(value):
     value = str(value or "").strip().casefold()
@@ -42,6 +43,28 @@ def _resolve_relation_endpoint(db, value):
     unique = list(dict.fromkeys(rows))
     return unique[0][0] if len(unique) == 1 else value
 
+def _result_payload(result):
+    return json.dumps({
+        "summary": result.summary,
+        "entities": [e.__dict__ for e in result.entities],
+        "tags": result.tags,
+        "related_ids": result.related_ids,
+        "importance": result.importance,
+        "document_type": result.document_type,
+        "translation_ko": result.translation_ko,
+        "relations": [r.__dict__ for r in result.relations],
+    }, ensure_ascii=False, sort_keys=True)
+
+def result_hash(result):
+    return hashlib.sha256(_result_payload(result).encode("utf-8")).hexdigest()
+
+def result_is_current(result):
+    with connect() as db:
+        row = db.execute("SELECT payload FROM results WHERE document_id=?", (result.document.id,)).fetchone()
+    if not row:
+        return False
+    return hashlib.sha256(row[0].encode("utf-8")).hexdigest() == result_hash(result)
+
 def upsert_document(doc, force=False):
     h = content_hash(doc.content)
     with connect() as db:
@@ -60,16 +83,7 @@ def upsert_document(doc, force=False):
     return True
 
 def save_result(result):
-    payload = json.dumps({
-        "summary": result.summary,
-        "entities": [e.__dict__ for e in result.entities],
-        "tags": result.tags,
-        "related_ids": result.related_ids,
-        "importance": result.importance,
-        "document_type": result.document_type,
-        "translation_ko": result.translation_ko,
-        "relations": [r.__dict__ for r in result.relations],
-    }, ensure_ascii=False)
+    payload = _result_payload(result)
 
     with connect() as db:
         db.execute("DELETE FROM document_entities WHERE document_id=?", (result.document.id,))
