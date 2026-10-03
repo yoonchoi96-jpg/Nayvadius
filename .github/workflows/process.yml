@@ -2,19 +2,32 @@ name: Nayvadius Process
 
 on:
   workflow_dispatch:
+    inputs:
+      input_path:
+        description: JSONL input path
+        required: false
+        default: data/input.example.jsonl
   schedule:
     - cron: "17 2 * * *"
+
+permissions:
+  contents: write
 
 jobs:
   process:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: pip install -e .
-      - run: python -m nayvadius.cli process
-      # V0 intentionally does not require a self-hosted runner or cloud deployment.
+      - name: Process incrementally
+        run: python -m nayvadius.cli process --input "${{ inputs.input_path || 'data/input.example.jsonl' }}"
+      - name: Commit generated knowledge
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add output/ data/*.db || true
+          git diff --cached --quiet || git commit -m "chore: update processed knowledge"
+          git push
