@@ -33,6 +33,21 @@ def save_entity_alias(alias, canonical_name, entity_type):
  with connect() as c:
   c.execute('INSERT OR REPLACE INTO entity_aliases(alias,canonical_name,entity_type) VALUES(?,?,?)',(alias,canonical_name,entity_type))
 
+def prune_orphan_entities():
+    with connect() as db:
+        rows = db.execute(
+            "SELECT name,entity_type FROM entities "
+            "WHERE NOT EXISTS (SELECT 1 FROM document_entities de "
+            "WHERE de.entity_name=entities.name AND de.entity_type=entities.entity_type) "
+            "AND NOT EXISTS (SELECT 1 FROM relations r "
+            "WHERE r.source_name=entities.name OR r.target_name=entities.name)"
+        ).fetchall()
+        for name, entity_type in rows:
+            db.execute("DELETE FROM entity_aliases WHERE canonical_name=? AND entity_type=?", (name, entity_type))
+            db.execute("DELETE FROM entities WHERE name=? AND entity_type=?", (name, entity_type))
+        return len(rows)
+
+
 def status():
  with connect() as c: return {t:c.execute('SELECT COUNT(*) FROM '+t).fetchone()[0] for t in ('documents','entities','relations','document_relations','evidence','relation_evidence','entity_aliases','llm_cache')}
 
