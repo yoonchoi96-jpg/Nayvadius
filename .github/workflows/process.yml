@@ -7,29 +7,15 @@ on:
     inputs:
       input_path:
         required: false
-        default: data/input.example.jsonl
+        default: data/abraham_export.jsonl
         type: string
       source:
         required: false
-        default: jsonl
+        default: abraham
         type: choice
         options:
+          - abraham
           - jsonl
-          - readwise
-      location:
-        required: false
-        default: archive
-        type: choice
-        options:
-          - new
-          - later
-          - shortlist
-          - archive
-          - feed
-      source_limit:
-        required: false
-        default: '0'
-        type: string
       offset:
         required: false
         default: '0'
@@ -63,22 +49,12 @@ jobs:
 
       - name: Process knowledge
         env:
-          INPUT_PATH: ${{ inputs.input_path || 'data/input.example.jsonl' }}
-          SOURCE: ${{ inputs.source || 'jsonl' }}
-          LOCATION: ${{ inputs.location || 'archive' }}
-          SOURCE_LIMIT: ${{ inputs.source_limit || '0' }}
+          INPUT_PATH: ${{ inputs.input_path || 'data/abraham_export.jsonl' }}
+          SOURCE: ${{ inputs.source || 'abraham' }}
           OFFSET: ${{ inputs.offset || '0' }}
           LIMIT: ${{ inputs.limit || '0' }}
-          READWISE_ACCESS_TOKEN: ${{ secrets.READWISE_ACCESS_TOKEN }}
-          NAYVADIUS_LLM_API_KEY: ${{ secrets.NAYVADIUS_LLM_API_KEY }}
-          NAYVADIUS_LLM_BASE_URL: ${{ secrets.NAYVADIUS_LLM_BASE_URL }}
-          NAYVADIUS_LLM_MODEL: ${{ secrets.NAYVADIUS_LLM_MODEL }}
         run: |
-          if [ "$SOURCE" = "readwise" ]; then
-            python -m nayvadius.cli process --source readwise --location "$LOCATION" --source-limit "$SOURCE_LIMIT" --offset "$OFFSET" --limit "$LIMIT" --output output
-          else
-            python -m nayvadius.cli process --source jsonl --input "$INPUT_PATH" --offset "$OFFSET" --limit "$LIMIT" --output output
-          fi
+          python -m nayvadius.cli process --source "$SOURCE" --input "$INPUT_PATH" --offset "$OFFSET" --limit "$LIMIT" --output output
 
       - name: Commit knowledge
         run: |
