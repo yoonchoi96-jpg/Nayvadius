@@ -9,6 +9,14 @@ on:
         required: false
         default: data/input.example.jsonl
         type: string
+      offset:
+        required: false
+        default: '0'
+        type: string
+      limit:
+        required: false
+        default: '0'
+        type: string
   schedule:
     - cron: '17 2 * * *'
 
@@ -35,10 +43,12 @@ jobs:
       - name: Process knowledge
         env:
           INPUT_PATH: ${{ inputs.input_path || 'data/input.example.jsonl' }}
+          OFFSET: ${{ inputs.offset || '0' }}
+          LIMIT: ${{ inputs.limit || '0' }}
           NAYVADIUS_LLM_API_KEY: ${{ secrets.NAYVADIUS_LLM_API_KEY }}
           NAYVADIUS_LLM_BASE_URL: ${{ secrets.NAYVADIUS_LLM_BASE_URL }}
           NAYVADIUS_LLM_MODEL: ${{ secrets.NAYVADIUS_LLM_MODEL }}
-        run: python -c "import os; from nayvadius.engine import Engine; print(Engine().run(os.environ['INPUT_PATH']))"
+        run: python -c "import os; from nayvadius.engine import Engine; print(Engine().run(os.environ['INPUT_PATH'], offset=int(os.environ['OFFSET']), limit=int(os.environ['LIMIT'])))"
 
       - name: Commit knowledge
         run: |
