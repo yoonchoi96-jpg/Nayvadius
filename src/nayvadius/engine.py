@@ -13,12 +13,15 @@ class Engine:
         self.llm = LLMProvider()
 
     def run(self, input_path, offset=0, limit=0):
+        return self.run_documents(load_jsonl(input_path), offset=offset, limit=limit)
+
+    def run_documents(self, docs, offset=0, limit=0):
         if offset < 0:
             raise ValueError("offset must be >= 0")
         if limit < 0:
             raise ValueError("limit must be >= 0")
 
-        docs = load_jsonl(input_path)
+        docs = list(docs)
         if offset:
             docs = docs[offset:]
         if limit:
@@ -69,7 +72,6 @@ class Engine:
         with connect() as db:
             write_graph(db, self.output)
 
-        counts = status()
         return {
             "selected": len(docs),
             "offset": offset,
@@ -80,5 +82,5 @@ class Engine:
             "llm_calls": llm_calls,
             "cache_hits": cache_hits,
             "llm_fallbacks": llm_fallbacks,
-            "db": counts,
+            "db": status(),
         }
