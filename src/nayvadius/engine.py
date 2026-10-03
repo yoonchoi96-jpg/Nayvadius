@@ -30,7 +30,7 @@ class Engine:
     def _persist(self, result, stats):
         doc = result.document
         try:
-            if not upsert_document(doc):
+            if not upsert_document(doc, force=stats.get("force_refresh", False)):
                 stats["skipped"] += 1
                 return
             save_result(result)
@@ -82,7 +82,7 @@ class Engine:
         stats = {"selected": len(records), "offset": offset, "limit": limit,
                  "processed": 0, "skipped": 0, "errors": 0,
                  "llm_calls": 0, "cache_hits": 0, "llm_fallbacks": 0,
-                 "abraham_records": len(records)}
+                 "abraham_records": len(records), "force_refresh": True}
         for result in records:
             self._persist(result, stats)
         return self._finish(stats)
