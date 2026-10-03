@@ -1,4 +1,4 @@
-import json, os, urllib.request
+import json, os, time, urllib.error, urllib.request
 from .hash import content_hash
 SCHEMA_VERSION='v5'
 class LLMProvider:
@@ -12,7 +12,19 @@ class LLMProvider:
         prompt='Return JSON only with summary, document_type, importance, tags, entities, relations, translation_ko. Never invent entities or relations. TITLE: '+title+' CONTENT: '+content[:20000]
         body=json.dumps({'model':self.model,'temperature':0,'messages':[{'role':'system','content':'Precise knowledge extraction engine.'},{'role':'user','content':prompt}]}).encode()
         req=urllib.request.Request(self.url,data=body,headers={'Authorization':'Bearer '+self.key,'Content-Type':'application/json'})
-        with urllib.request.urlopen(req,timeout=90) as response: data=json.load(response)
+        last_error = None
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(req, timeout=90) as response:
+                    data = json.load(response)
+                break
+            except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
+                last_error = exc
+                if attempt == 2:
+                    raise
+                time.sleep(2 ** attempt)
+        else:
+            raise last_error or RuntimeError("LLM request failed")
         text=data['choices'][0]['message']['content'].strip()
         if text.startswith('```'): text=text.split('```')[1].removeprefix('json').strip()
         return json.loads(text)
