@@ -89,3 +89,16 @@ def test_abraham_refreshes_enrichment_when_content_is_unchanged(tmp_path: Path, 
         payload = db.execute("SELECT payload FROM results WHERE document_id='same'").fetchone()[0]
     assert names == [("Apple Inc.",), ("Microsoft",)]
     assert '"summary": "second"' in payload
+
+
+def test_prune_orphan_entities_removes_unused_aliases(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("nayvadius.config.settings.state_path", str(tmp_path / "state.db"))
+    from nayvadius.db import prune_orphan_entities
+    with connect() as db:
+        db.execute("INSERT INTO entities VALUES('Old Entity','Concepts','Old',0.6)")
+        db.execute("INSERT INTO entity_aliases VALUES('old entity','Old Entity','Concepts')")
+        db.execute("INSERT INTO entity_aliases VALUES('old','Old Entity','Concepts')")
+    assert prune_orphan_entities() == 1
+    with connect() as db:
+        assert db.execute("SELECT * FROM entities").fetchall() == []
+        assert db.execute("SELECT * FROM entity_aliases").fetchall() == []
