@@ -1,29 +1,67 @@
 # Nayvadius
 
-Personal knowledge processing system.
+Personal knowledge graph and cross-source verification engine.
 
-## V0 principles
+## Core boundary
+
+- **Abraham:** Readwise/Reader collection, selection, rating, translation, entity/relation extraction, and knowledge admission.
+- **Nayvadius:** canonicalization, deduplication, cross-document linking, graph construction, provenance, and downstream knowledge structure.
+- **Readwise:** remains an on-demand evidence/source layer for verification; Nayvadius does not ingest or classify the Reader library directly.
+- **Obsidian / Notion:** downstream knowledge interfaces.
+
+```
+Readwise Reader
+      ↓
+   ABRAHAM
+      ↓ enriched JSONL
+  NAYVADIUS
+      ├── canonical entities
+      ├── relations / graph
+      ├── deduplication
+      ├── provenance
+      └── source verification → Readwise (on demand)
+             ↓
+       Obsidian / Notion
+```
+
+## Input contract
+
+Nayvadius accepts an Abraham export record such as:
+
+```json
+{
+  "id": "reader-document-id",
+  "title": "Example",
+  "content": "Original document text",
+  "source": "readwise",
+  "metadata": {
+    "readwise_id": "reader-document-id",
+    "url": "https://example.com"
+  },
+  "rating": "red",
+  "tags": ["topic/example"],
+  "translation_ko": "한국어 번역",
+  "entities": [
+    {"name": "Example Entity", "entity_type": "Concepts", "confidence": 0.95}
+  ],
+  "relations": [
+    {"source": "Example Entity", "relation": "related_to", "target": "Another Entity", "confidence": 0.9}
+  ]
+}
+```
+
+Abraham's extracted knowledge is persisted directly; Nayvadius does not spend an LLM call re-extracting it.
+
+## Verification
+
+`ReadwiseEvidenceClient` performs a targeted Reader API lookup by document ID only when source evidence is needed. The official Reader API supports filtering the document list by `id`. citeturn0search0
+
+## Runtime principles
 
 - No self-hosted runner.
 - GitHub-hosted Actions only.
 - Incremental processing.
-- Provider-agnostic AI layer.
-- Persistent local/state database.
-- Obsidian output first; other destinations are adapters.
+- Provider-agnostic optional AI layer.
+- SQLite state/cache.
+- Obsidian output first; other destinations can be added later.
 - Cloud infrastructure is optional until actual workload requires it.
-
-## Architecture
-
-GitHub -> GitHub Actions -> Nayvadius processor -> state/cache -> output adapters
-
-
-## V5 pipeline
-
-- **Adapters:** source data is normalized into `Document` objects through a small adapter interface.
-- **Incremental state:** SQLite tracks document hashes, extraction results, entities, relations, and LLM cache.
-- **AI:** an OpenAI-compatible provider is optional; missing keys or failed extraction fall back to deterministic processing.
-- **Obsidian:** documents are emitted as stable-ID Markdown files; entities are grouped by entity type.
-- **Graph:** every run emits `output/graph.json` for downstream graph/visualization tooling.
-- **Automation:** GitHub Actions can run the pipeline without a self-hosted runner.
-
-The first production source adapter is JSONL. Reader/Readwise/Notion connectors can be added without changing the processing core.
