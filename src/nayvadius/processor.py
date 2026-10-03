@@ -1,18 +1,9 @@
 import re
 from .models import Document, Entity, ProcessedDocument
 
-NAME = re.compile(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2}\b")
-
 def process_document(doc: Document) -> ProcessedDocument:
-    words = doc.content.split()
-    entities = []
-    seen = set()
-    for match in NAME.finditer(doc.content):
-        key = match.group(0)
-        if key not in seen:
-            seen.add(key)
-            entities.append(Entity(key, "people", 0.35))
-    tags = [f"source/{doc.source}"]
-    if len(words) > 500:
-        tags.append("long-form")
-    return ProcessedDocument(doc, " ".join(words[:80]), entities, tags, [])
+    words=doc.content.split()
+    names=[]
+    for n in re.findall(r"\\b[A-Z][A-Za-z]{2,}(?:\\s+[A-Z][A-Za-z]{2,})*\\b",doc.content):
+        if n not in names: names.append(n)
+    return ProcessedDocument(doc," ".join(words[:120]),[Entity(n,"Concept",0.5) for n in names[:30]],[f"source/{doc.source}"],[])
