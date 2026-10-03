@@ -14,3 +14,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+# V5 CLI compatibility
