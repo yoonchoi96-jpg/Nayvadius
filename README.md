@@ -54,7 +54,7 @@ Abraham's extracted knowledge is persisted directly; Nayvadius does not spend an
 
 ## Verification
 
-`ReadwiseEvidenceClient` performs a targeted Reader API lookup by document ID only when source evidence is needed. The official Reader API supports filtering the document list by `id`. citeturn0search0
+`ReadwiseEvidenceClient` performs a targeted Reader API lookup by document ID only when source evidence is needed. The official Reader API supports filtering the document list by `id`.
 
 ## Runtime principles
 
