@@ -21,6 +21,27 @@ def _canonical_entity(db, entity):
         return unique[0][0]
     return entity.name
 
+def _merge_aliases(db, canonical_name, entity_type, aliases):
+    row = db.execute(
+        "SELECT aliases FROM entities WHERE name=? AND entity_type=?",
+        (canonical_name, entity_type),
+    ).fetchone()
+    values = set(x.strip() for x in ((row[0] if row else "") or "").split(",") if x.strip())
+    values.update(x.strip() for x in aliases if _norm_alias(x))
+    values.discard(canonical_name)
+    return ",".join(sorted(values, key=lambda x: (_norm_alias(x), x)))
+
+def _resolve_relation_endpoint(db, value):
+    alias = _norm_alias(value)
+    if not alias:
+        return value
+    rows = db.execute(
+        "SELECT canonical_name,entity_type FROM entity_aliases WHERE alias=?",
+        (alias,),
+    ).fetchall()
+    unique = list(dict.fromkeys(rows))
+    return unique[0][0] if len(unique) == 1 else value
+
 def upsert_document(doc):
     h = content_hash(doc.content)
     with connect() as db:
@@ -58,9 +79,13 @@ def save_result(result):
         for e in result.entities:
             name = _canonical_entity(db, e)
             canonical[e.name] = name
+            aliases = _merge_aliases(db, name, e.entity_type, e.aliases)
             db.execute(
-                "INSERT OR REPLACE INTO entities VALUES(?,?,?,?)",
-                (name, e.entity_type, ",".join(e.aliases), e.confidence),
+                """INSERT INTO entities(name,entity_type,aliases,confidence) VALUES(?,?,?,?)
+                   ON CONFLICT(name,entity_type) DO UPDATE SET
+                   aliases=excluded.aliases,
+                   confidence=MAX(entities.confidence, excluded.confidence)""",
+                (name, e.entity_type, aliases, e.confidence),
             )
             db.execute(
                 "INSERT OR REPLACE INTO entity_aliases(alias,canonical_name,entity_type) VALUES(?,?,?)",
@@ -78,8 +103,8 @@ def save_result(result):
             )
 
         for x in result.relations:
-            source = canonical.get(x.source, x.source)
-            target = canonical.get(x.target, x.target)
+            source = canonical.get(x.source) or _resolve_relation_endpoint(db, x.source)
+            target = canonical.get(x.target) or _resolve_relation_endpoint(db, x.target)
             db.execute(
                 "INSERT OR REPLACE INTO relations VALUES(?,?,?,?)",
                 (source, x.relation, target, x.confidence),
