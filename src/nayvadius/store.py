@@ -88,13 +88,13 @@ def save_result(result):
                 (name, e.entity_type, aliases, e.confidence),
             )
             db.execute(
-                "INSERT OR REPLACE INTO entity_aliases(alias,canonical_name,entity_type) VALUES(?,?,?)",
+                "INSERT OR IGNORE INTO entity_aliases(alias,canonical_name,entity_type) VALUES(?,?,?)",
                 (_norm_alias(name), name, e.entity_type),
             )
             for alias in e.aliases:
                 if _norm_alias(alias):
                     db.execute(
-                        "INSERT OR REPLACE INTO entity_aliases(alias,canonical_name,entity_type) VALUES(?,?,?)",
+                        "INSERT OR IGNORE INTO entity_aliases(alias,canonical_name,entity_type) VALUES(?,?,?)",
                         (_norm_alias(alias), name, e.entity_type),
                     )
             db.execute(
