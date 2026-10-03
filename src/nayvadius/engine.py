@@ -12,11 +12,22 @@ class Engine:
         self.output = output_path
         self.llm = LLMProvider()
 
-    def run(self, input_path):
+    def run(self, input_path, offset=0, limit=0):
+        if offset < 0:
+            raise ValueError("offset must be >= 0")
+        if limit < 0:
+            raise ValueError("limit must be >= 0")
+
+        docs = load_jsonl(input_path)
+        if offset:
+            docs = docs[offset:]
+        if limit:
+            docs = docs[:limit]
+
         processed = skipped = errors = 0
         llm_calls = cache_hits = llm_fallbacks = 0
 
-        for doc in load_jsonl(input_path):
+        for doc in docs:
             try:
                 if not upsert_document(doc):
                     skipped += 1
@@ -60,6 +71,9 @@ class Engine:
 
         counts = status()
         return {
+            "selected": len(docs),
+            "offset": offset,
+            "limit": limit,
             "processed": processed,
             "skipped": skipped,
             "errors": errors,
