@@ -23,7 +23,7 @@ jobs:
       NAYVADIUS_LLM_API_KEY: ${{ secrets.NAYVADIUS_LLM_API_KEY }}
       NAYVADIUS_LLM_BASE_URL: ${{ secrets.NAYVADIUS_LLM_BASE_URL }}
       NAYVADIUS_LLM_MODEL: ${{ secrets.NAYVADIUS_LLM_MODEL }}
-     run: python -m nayvadius.cli process --input "${{ inputs.input_path || 'data/input.example.jsonl' }}"
+     run: python -c "from nayvadius.engine import Engine; print(Engine().run('${{ inputs.input_path || 'data/input.example.jsonl' }}'))"
    - name: Commit knowledge
      run: |
       git config user.name 'nayvadius-bot'
