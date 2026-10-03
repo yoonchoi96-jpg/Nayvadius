@@ -54,6 +54,10 @@ jobs:
           OFFSET: ${{ inputs.offset || '0' }}
           LIMIT: ${{ inputs.limit || '0' }}
         run: |
+          if [ ! -f "$INPUT_PATH" ]; then
+            echo "Input not present yet: $INPUT_PATH"
+            exit 0
+          fi
           python -m nayvadius.cli process --source "$SOURCE" --input "$INPUT_PATH" --offset "$OFFSET" --limit "$LIMIT" --output output
 
       - name: Commit knowledge
