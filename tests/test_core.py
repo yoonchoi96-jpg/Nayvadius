@@ -35,3 +35,11 @@ def test_input_validation(tmp_path: Path):
     except ValueError:
         return
     assert False
+
+
+def test_parse_llm_rejects_non_object():
+    try:
+        parse_llm([], Document("1", "T", "x"))
+    except ValueError:
+        return
+    assert False
