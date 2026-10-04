@@ -2,7 +2,7 @@ import json, sqlite3
 from pathlib import Path
 from .config import settings
 
-SCHEMA="""CREATE TABLE IF NOT EXISTS documents(id TEXT PRIMARY KEY,title TEXT NOT NULL,content_hash TEXT NOT NULL,source TEXT NOT NULL,status TEXT NOT NULL,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS results(document_id TEXT PRIMARY KEY,payload TEXT NOT NULL);CREATE TABLE IF NOT EXISTS entities(name TEXT NOT NULL,entity_type TEXT NOT NULL,aliases TEXT,confidence REAL NOT NULL,PRIMARY KEY(name,entity_type));CREATE TABLE IF NOT EXISTS document_entities(document_id TEXT NOT NULL,entity_name TEXT NOT NULL,entity_type TEXT NOT NULL,confidence REAL NOT NULL,PRIMARY KEY(document_id,entity_name,entity_type));CREATE TABLE IF NOT EXISTS relations(source_name TEXT NOT NULL,relation TEXT NOT NULL,target_name TEXT NOT NULL,confidence REAL NOT NULL,PRIMARY KEY(source_name,relation,target_name));CREATE TABLE IF NOT EXISTS document_relations(document_id TEXT NOT NULL,source_name TEXT NOT NULL,relation TEXT NOT NULL,target_name TEXT NOT NULL,confidence REAL NOT NULL,PRIMARY KEY(document_id,source_name,relation,target_name));CREATE TABLE IF NOT EXISTS evidence(document_id TEXT PRIMARY KEY,source TEXT NOT NULL,title TEXT NOT NULL,content TEXT NOT NULL,url TEXT,checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS relation_evidence(document_id TEXT NOT NULL,source_name TEXT NOT NULL,relation TEXT NOT NULL,target_name TEXT NOT NULL,evidence_document_id TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'checked',checked_at TEXT,PRIMARY KEY(document_id,source_name,relation,target_name,evidence_document_id));CREATE TABLE IF NOT EXISTS llm_cache(cache_key TEXT PRIMARY KEY,payload TEXT NOT NULL);CREATE TABLE IF NOT EXISTS entity_aliases(alias TEXT PRIMARY KEY,canonical_name TEXT NOT NULL,entity_type TEXT NOT NULL);CREATE TABLE IF NOT EXISTS processing_failures(document_id TEXT PRIMARY KEY,attempts INTEGER NOT NULL DEFAULT 0,last_error TEXT NOT NULL,next_retry_at TEXT,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS vocabularies(id TEXT PRIMARY KEY,word TEXT NOT NULL,traditional TEXT,pinyin TEXT,pos TEXT,meaning_ko TEXT,hsk_levels TEXT,wordbooks TEXT,source TEXT NOT NULL,metadata TEXT NOT NULL DEFAULT '{}',updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS vocabulary_aliases(alias TEXT PRIMARY KEY,canonical_id TEXT NOT NULL);CREATE TABLE IF NOT EXISTS entity_vocabulary_links(entity_name TEXT NOT NULL,entity_type TEXT NOT NULL,vocabulary_id TEXT NOT NULL,match_type TEXT NOT NULL DEFAULT 'explicit',confidence REAL NOT NULL DEFAULT 1.0,PRIMARY KEY(entity_name,entity_type,vocabulary_id));"""
+SCHEMA="""CREATE TABLE IF NOT EXISTS documents(id TEXT PRIMARY KEY,title TEXT NOT NULL,content_hash TEXT NOT NULL,source TEXT NOT NULL,status TEXT NOT NULL,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS results(document_id TEXT PRIMARY KEY,payload TEXT NOT NULL);CREATE TABLE IF NOT EXISTS entities(name TEXT NOT NULL,entity_type TEXT NOT NULL,aliases TEXT,confidence REAL NOT NULL,PRIMARY KEY(name,entity_type));CREATE TABLE IF NOT EXISTS document_entities(document_id TEXT NOT NULL,entity_name TEXT NOT NULL,entity_type TEXT NOT NULL,confidence REAL NOT NULL,PRIMARY KEY(document_id,entity_name,entity_type));CREATE TABLE IF NOT EXISTS relations(source_name TEXT NOT NULL,relation TEXT NOT NULL,target_name TEXT NOT NULL,confidence REAL NOT NULL,PRIMARY KEY(source_name,relation,target_name));CREATE TABLE IF NOT EXISTS document_relations(document_id TEXT NOT NULL,source_name TEXT NOT NULL,relation TEXT NOT NULL,target_name TEXT NOT NULL,confidence REAL NOT NULL,PRIMARY KEY(document_id,source_name,relation,target_name));CREATE TABLE IF NOT EXISTS evidence(document_id TEXT PRIMARY KEY,source TEXT NOT NULL,title TEXT NOT NULL,content TEXT NOT NULL,url TEXT,checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS relation_evidence(document_id TEXT NOT NULL,source_name TEXT NOT NULL,relation TEXT NOT NULL,target_name TEXT NOT NULL,evidence_document_id TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'checked',checked_at TEXT,PRIMARY KEY(document_id,source_name,relation,target_name,evidence_document_id));CREATE TABLE IF NOT EXISTS llm_cache(cache_key TEXT PRIMARY KEY,payload TEXT NOT NULL);CREATE TABLE IF NOT EXISTS entity_aliases(alias TEXT PRIMARY KEY,canonical_name TEXT NOT NULL,entity_type TEXT NOT NULL);CREATE TABLE IF NOT EXISTS processing_failures(document_id TEXT PRIMARY KEY,attempts INTEGER NOT NULL DEFAULT 0,last_error TEXT NOT NULL,next_retry_at TEXT,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS vocabularies(id TEXT PRIMARY KEY,word TEXT NOT NULL,traditional TEXT,pinyin TEXT,pos TEXT,meaning_ko TEXT,hsk_levels TEXT,wordbooks TEXT,source TEXT NOT NULL,metadata TEXT NOT NULL DEFAULT '{}',updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS vocabulary_aliases(alias TEXT PRIMARY KEY,canonical_id TEXT NOT NULL);CREATE TABLE IF NOT EXISTS entity_vocabulary_links(entity_name TEXT NOT NULL,entity_type TEXT NOT NULL,vocabulary_id TEXT NOT NULL,match_type TEXT NOT NULL DEFAULT 'explicit',confidence REAL NOT NULL DEFAULT 1.0,PRIMARY KEY(entity_name,entity_type,vocabulary_id));CREATE TABLE IF NOT EXISTS document_vocabulary_links(document_id TEXT NOT NULL,vocabulary_id TEXT NOT NULL,match_type TEXT NOT NULL DEFAULT 'exact',confidence REAL NOT NULL DEFAULT 1.0,PRIMARY KEY(document_id,vocabulary_id));CREATE TABLE IF NOT EXISTS vocabulary_sources(vocabulary_id TEXT NOT NULL,source_id TEXT NOT NULL,source TEXT NOT NULL,metadata TEXT NOT NULL DEFAULT '{}',PRIMARY KEY(vocabulary_id,source_id));"""
 
 def connect(path=None):
  p=Path(path or settings.state_path); p.parent.mkdir(parents=True,exist_ok=True); c=sqlite3.connect(p,timeout=30); c.execute("PRAGMA journal_mode=WAL"); c.execute("PRAGMA busy_timeout=30000"); c.execute("PRAGMA foreign_keys=ON"); c.executescript(SCHEMA)
@@ -64,6 +64,43 @@ def save_vocabulary(vocabulary, entity_links=()):
             db.execute("INSERT OR REPLACE INTO entity_vocabulary_links VALUES(?,?,?,?,?)",
                        (name,entity_type,vocabulary.id,match_type,confidence))
 
+
+def _norm_vocabulary_alias(value):
+ return " ".join(str(value or "").strip().casefold().split())
+
+def resolve_vocabulary_id(value):
+ alias = _norm_vocabulary_alias(value)
+ if not alias: return None
+ with connect() as c:
+  row=c.execute("SELECT canonical_id FROM vocabulary_aliases WHERE alias=?",(alias,)).fetchone()
+  return row[0] if row else None
+
+def save_vocabulary_alias(alias, canonical_id):
+ alias=_norm_vocabulary_alias(alias)
+ if alias:
+  with connect() as c: c.execute("INSERT OR IGNORE INTO vocabulary_aliases(alias,canonical_id) VALUES(?,?)",(alias,canonical_id))
+
+def save_vocabulary_source(vocabulary_id, source_id, source, metadata=None):
+ with connect() as c:
+  c.execute("INSERT OR REPLACE INTO vocabulary_sources(vocabulary_id,source_id,source,metadata) VALUES(?,?,?,?)",
+            (vocabulary_id,source_id,source,json.dumps(metadata or {},ensure_ascii=False)))
+
+def link_document_vocabularies(document_id, vocabulary_ids, match_type="exact", confidence=1.0):
+ with connect() as c:
+  for vocabulary_id in vocabulary_ids:
+   canonical=resolve_vocabulary_id(vocabulary_id) or vocabulary_id
+   c.execute("INSERT OR REPLACE INTO document_vocabulary_links VALUES(?,?,?,?)",(document_id,canonical,match_type,confidence))
+
+def document_vocabulary_links(document_id=None):
+ with connect() as c:
+  if document_id:
+   return c.execute("SELECT vocabulary_id,match_type,confidence FROM document_vocabulary_links WHERE document_id=? ORDER BY vocabulary_id",(document_id,)).fetchall()
+  return c.execute("SELECT document_id,vocabulary_id,match_type,confidence FROM document_vocabulary_links ORDER BY document_id,vocabulary_id").fetchall()
+
+def vocabulary_documents(vocabulary_id):
+ with connect() as c:
+  canonical=resolve_vocabulary_id(vocabulary_id) or vocabulary_id
+  return c.execute("SELECT document_id,match_type,confidence FROM document_vocabulary_links WHERE vocabulary_id=? ORDER BY document_id",(canonical,)).fetchall()
 
 def vocabulary_links(vocabulary_id=None):
  with connect() as c:
