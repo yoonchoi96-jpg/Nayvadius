@@ -39,3 +39,23 @@ def test_entity_merge_rejects_unknown_reason(tmp_path: Path):
         pass
     else:
         raise AssertionError("unknown merge reason must be rejected")
+
+
+def test_entity_merge_preserves_existing_document_link_confidence(tmp_path: Path):
+    db_path = tmp_path / "state.db"
+    db = connect(db_path)
+    db.execute("INSERT INTO entities VALUES(?,?,?,?)", ("Canonical", "People", "", 0.9))
+    db.execute("INSERT INTO entities VALUES(?,?,?,?)", ("Alias", "People", "", 0.8))
+    db.execute("INSERT INTO documents VALUES(?,?,?,?,?)", ("d1", "doc", "h", "abraham", "done"))
+    db.execute("INSERT INTO document_entities VALUES(?,?,?,?)", ("d1", "Canonical", "People", 0.4))
+    db.execute("INSERT INTO document_entities VALUES(?,?,?,?)", ("d1", "Alias", "People", 0.8))
+    db.commit()
+    db.close()
+
+    assert merge_entity("Canonical", "Alias", "People", reason="explicit_alias")
+
+    db = connect(db_path)
+    assert db.execute(
+        "SELECT document_id,entity_name,confidence FROM document_entities"
+    ).fetchall() == [("d1", "Canonical", 0.8)]
+    db.close()
