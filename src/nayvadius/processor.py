@@ -2,12 +2,11 @@ import math,re
 from .models import Document,Entity,Relation,ProcessedDocument
 
 ENTITY_TYPES = {
-    "People", "Companies", "Organizations", "Countries", "Places",
+    "People", "Organizations", "Countries", "Places",
     "Products", "Technologies", "Concepts", "Events", "Institutions", "Brands", "MusicTracks", "MusicAlbums",
 }
 _ENTITY_TYPE_ALIASES = {
     "person": "People", "people": "People",
-    "company": "Companies", "companies": "Companies",
     "organization": "Organizations", "organizations": "Organizations",
     "country": "Countries", "countries": "Countries",
     "place": "Places", "places": "Places",
@@ -16,7 +15,6 @@ _ENTITY_TYPE_ALIASES = {
     "concept": "Concepts", "concepts": "Concepts",
     "event": "Events", "events": "Events",
     "institution": "Institutions", "institutions": "Institutions",
-    "brand": "Brands", "brands": "Brands",
     "musictrack": "MusicTracks", "musictracks": "MusicTracks", "track": "MusicTracks", "tracks": "MusicTracks",
     "musicalbum": "MusicAlbums", "musicalbums": "MusicAlbums", "album": "MusicAlbums", "albums": "MusicAlbums",
 }
