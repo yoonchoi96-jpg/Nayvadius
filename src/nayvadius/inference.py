@@ -37,15 +37,36 @@ def derive_relation_chains(db=None):
     count = 0
     for artist, track, c1, album, c2 in rows:
         confidence = round(min(float(c1), float(c2)) * 0.95, 6)
-        provenance = json.dumps([{
-            "source": artist,
-            "relation": "performed",
-            "target": track,
-        }, {
-            "source": track,
-            "relation": "part_of",
-            "target": album,
-        }])
+
+        def relation_provenance(source, relation, target):
+            try:
+                docs = [
+                    row[0]
+                    for row in db.execute(
+                        "SELECT document_id FROM document_relations "
+                        "WHERE source_name=? AND relation=? AND target_name=? "
+                        "ORDER BY document_id",
+                        (source, relation, target),
+                    )
+                ]
+            except Exception as exc:
+                if "no such table" in str(exc):
+                    docs = []
+                else:
+                    raise
+            item = {
+                "source": source,
+                "relation": relation,
+                "target": target,
+            }
+            if docs:
+                item["document_ids"] = docs
+            return item
+
+        provenance = json.dumps([
+            relation_provenance(artist, "performed", track),
+            relation_provenance(track, "part_of", album),
+        ], ensure_ascii=False)
         db.execute(
             """INSERT OR REPLACE INTO derived_relations
                (source_name,relation,target_name,confidence,rule,provenance)
