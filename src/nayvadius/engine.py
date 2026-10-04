@@ -5,7 +5,7 @@ from .models import Vocabulary
 from .store import upsert_document, save_result, result_is_current, link_vocabulary, reconcile_all_vocabularies, reconcile_document_vocabularies
 from .db import cache_get, cache_put, connect, status, prune_orphan_entities, record_failure, clear_failure
 from .providers import LLMProvider
-from .writer import write_markdown, write_entities, write_entities_from_db, write_entity_moc, write_vocabulary_from_db, write_vocabulary_moc, write_hsk_mocs
+from .writer import write_markdown, write_entities, write_entities_from_db, write_entity_moc, write_vocabulary_from_db, write_vocabulary_moc, write_hsk_mocs, write_knowledge_index, write_domain_mocs
 from .graph import write_graph
 
 
