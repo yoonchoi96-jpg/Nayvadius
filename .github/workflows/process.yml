@@ -28,7 +28,7 @@ on:
     - cron: '17 2 * * *'
 
 concurrency:
-  group: nayvadius-knowledge-pipeline
+  group: nayvadius-state-writer
   cancel-in-progress: false
 
 permissions:
