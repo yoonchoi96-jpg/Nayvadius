@@ -31,13 +31,20 @@ def write_graph(db, root):
     nodes = {}
     for name, entity_type, aliases, confidence in rows:
         node_id = f"{entity_type}:{name}"
+        try:
+            provenance = [{"source": s, "document_id": d} for s, d in db.execute("SELECT source,document_id FROM entity_sources WHERE entity_name=? AND entity_type=? ORDER BY source,document_id", (name, entity_type))]
+        except Exception as exc:
+            if "no such table" in str(exc):
+                provenance = []
+            else:
+                raise
         nodes[node_id] = {
             "id": node_id,
             "name": name,
             "type": entity_type,
             "aliases": [x.strip() for x in (aliases or "").split(",") if x.strip()],
             "confidence": confidence,
-            "provenance": [{"source": s, "document_id": d} for s, d in db.execute("SELECT source,document_id FROM entity_sources WHERE entity_name=? AND entity_type=? ORDER BY source,document_id", (name, entity_type))],
+            "provenance": provenance,
         }
 
     by_name = _canonical_id(rows, db)
