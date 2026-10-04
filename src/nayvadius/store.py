@@ -99,40 +99,37 @@ def link_vocabulary(vocabulary, explicit_entities=()):
         save_vocabulary_source(vocabulary.id, vocabulary.id, vocabulary.source, vocabulary.metadata)
         return links
 
-def link_document_to_vocabularies(document_id, content, explicit_ids=()):
+def link_document_to_vocabularies(document_id, content, explicit_ids=(), vocabulary_index=None):
+    text = _norm_alias(content)
     with connect() as db:
-        explicit=[]
+        explicit = []
         for value in explicit_ids:
-            canonical=resolve_vocabulary_id(value)
-            if canonical: explicit.append(canonical)
-        candidates=[]
-        for vid,word,traditional in db.execute("SELECT id,word,traditional FROM vocabularies"):
-            forms={x for x in (_norm_alias(word),_norm_alias(traditional)) if x}
-            text=_norm_alias(content)
-            if any(re.search(r'(?<![\\u4e00-\\u9fff])'+re.escape(form)+r'(?![\\u4e00-\\u9fff])',text) for form in forms):
-                candidates.append((vid,"exact",1.0))
-        link_document_vocabularies(document_id, set(explicit)|{x[0] for x in candidates},
-                                    "explicit" if explicit else "exact", 1.0)
-        return candidates
+            canonical = resolve_vocabulary_id(value)
+            if canonical:
+                explicit.append(canonical)
+        rows = vocabulary_index if vocabulary_index is not None else db.execute("SELECT id,word,traditional FROM vocabularies").fetchall()
+        candidates = []
+        for vid, word, traditional in rows:
+            forms = {x for x in (_norm_alias(word), _norm_alias(traditional)) if x}
+            if any(form in text for form in forms):
+                candidates.append((vid, "exact", 1.0))
+        db.execute("DELETE FROM document_vocabulary_links WHERE document_id=?", (document_id,))
+        for vid in dict.fromkeys(explicit):
+            db.execute("INSERT OR REPLACE INTO document_vocabulary_links VALUES(?,?,?,?)",
+                       (document_id, vid, "explicit", 1.0))
+        for vid, match_type, confidence in candidates:
+            if vid not in explicit:
+                db.execute("INSERT OR REPLACE INTO document_vocabulary_links VALUES(?,?,?,?)",
+                           (document_id, vid, match_type, confidence))
+        return len(set(explicit) | {x[0] for x in candidates})
 
-
-def reconcile_all_vocabularies():
+def reconcile_document_vocabularies(documents):
     with connect() as db:
-        rows = db.execute("SELECT id,word,traditional,pinyin,pos,meaning_ko,hsk_levels,wordbooks,source,metadata FROM vocabularies").fetchall()
-    total_links = 0
-    for row in rows:
-        metadata = json.loads(row[9] or "{}")
-        vocabulary = Vocabulary(
-            id=row[0], word=row[1], traditional=row[2] or "", pinyin=row[3] or "",
-            pos=row[4] or "", meaning_ko=row[5] or "",
-            hsk_levels=tuple(x for x in (row[6] or "").split("|") if x),
-            wordbooks=tuple(x for x in (row[7] or "").split("|") if x),
-            source=row[8] or "abel", metadata=metadata,
-        )
-        explicit = metadata.get("entities", []) if isinstance(metadata, dict) else []
-        total_links += len(link_vocabulary(vocabulary, explicit))
-    return total_links
-
+        vocabulary_index = db.execute("SELECT id,word,traditional FROM vocabularies").fetchall()
+    total = 0
+    for document_id, content, explicit_ids in documents:
+        total += link_document_to_vocabularies(document_id, content, explicit_ids, vocabulary_index)
+    return total
 
 def upsert_document(doc, force=False):
     h = content_hash(doc.content)
