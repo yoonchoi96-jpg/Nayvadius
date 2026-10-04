@@ -1,0 +1,62 @@
+name: Nayvadius Jacques Music Sync
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - data/jacques_export.json
+  workflow_dispatch:
+    inputs:
+      input_path:
+        required: false
+        default: data/jacques_export.json
+        type: string
+      offset:
+        required: false
+        default: '0'
+        type: string
+      limit:
+        required: false
+        default: '0'
+        type: string
+
+concurrency:
+  group: nayvadius-state-writer
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -e .
+      - name: Process Jacques
+        env:
+          INPUT_PATH: ${{ inputs.input_path || 'data/jacques_export.json' }}
+          OFFSET: ${{ inputs.offset || '0' }}
+          LIMIT: ${{ inputs.limit || '0' }}
+        run: |
+          if [ ! -f "$INPUT_PATH" ]; then
+            echo "Input not present yet: $INPUT_PATH"
+            exit 0
+          fi
+          python -m nayvadius.cli process --source jacques --input "$INPUT_PATH" --offset "$OFFSET" --limit "$LIMIT" --output output
+      - name: Commit knowledge
+        if: always()
+        run: |
+          git config user.name 'nayvadius-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add output data/*.db || true
+          if git diff --cached --quiet; then
+            echo 'No knowledge changes to commit.'
+          else
+            git commit -m 'chore: sync Jacques music knowledge'
+            git push
+          fi
