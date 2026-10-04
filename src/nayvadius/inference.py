@@ -136,7 +136,7 @@ def derive_cross_domain_links(db=None):
         """SELECT av.entity_name, av.entity_type, av.vocabulary_id,
                   MIN(av.entity_confidence, av.vocab_confidence, jtrack.confidence),
                   av.abraham_document_id, jtrack.document_id,
-                  jtrack.target_name, jtrack.target_type
+                  jtrack.target_name
              FROM (
                  SELECT de.entity_name, de.entity_type, dv.vocabulary_id,
                         de.confidence AS entity_confidence,
@@ -164,7 +164,7 @@ def derive_cross_domain_links(db=None):
     ).fetchall()
 
     for (entity_name, entity_type, vocabulary_id, confidence,
-         abraham_document_id, jacques_document_id, track_name, track_type) in bridge_rows:
+         abraham_document_id, jacques_document_id, track_name) in bridge_rows:
         db.execute(
             """INSERT OR REPLACE INTO cross_domain_links
                (left_name,left_type,right_id,right_kind,confidence,rule,provenance)
@@ -180,7 +180,7 @@ def derive_cross_domain_links(db=None):
                  },
                  "music": {
                      "track": track_name,
-                     "track_type": track_type,
+                     "track_type": "MusicTracks",
                  },
              }, ensure_ascii=False)),
         )
