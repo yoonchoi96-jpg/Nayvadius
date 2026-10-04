@@ -88,6 +88,7 @@ def write_notion_manifest(db, root: str) -> str:
             "FROM derived_relations ORDER BY source_name,relation,target_name,rule"
         ):
             relations.append({
+                "id": _page_id("relation", f"derived:{source_name}:{relation}:{target_name}:{rule}"),
                 "source": source_name,
                 "relation": relation,
                 "target": target_name,
