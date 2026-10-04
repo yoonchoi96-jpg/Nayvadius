@@ -188,8 +188,45 @@ def write_graph(db, root):
         seen.add(key)
         edges.append(edge)
 
+    # Export canonical source bridges as first-class graph edges.
+    try:
+        bridge_rows = db.execute(
+            """SELECT entity_name,entity_type,source_a,source_b,confidence,rule,provenance
+                 FROM source_bridge_links
+                ORDER BY entity_name,entity_type,source_a,source_b"""
+        ).fetchall()
+    except Exception as exc:
+        if "no such table" in str(exc):
+            bridge_rows = []
+        else:
+            raise
+    for entity_name, entity_type, source_a, source_b, confidence, rule, provenance in bridge_rows:
+        source_id = f"{entity_type}:{entity_name}"
+        target_id = f"Source:{source_a}↔{source_b}"
+        if source_id not in nodes:
+            continue
+        nodes.setdefault(target_id, {
+            "id": target_id,
+            "name": f"{source_a} ↔ {source_b}",
+            "type": "SourceBridge",
+            "sources": [source_a, source_b],
+        })
+        key = (source_id, "source_bridge", target_id, "source_bridge")
+        if key in seen:
+            continue
+        edges.append({
+            "source": source_id,
+            "relation": "source_bridge",
+            "target": target_id,
+            "confidence": confidence,
+            "kind": "source_bridge",
+            "rule": rule,
+            "provenance": json.loads(provenance),
+        })
+        seen.add(key)
+
     payload = {
-        "schema_version": "6",
+        "schema_version": "7",
         "nodes": list(nodes.values()),
         "edges": edges,
     }
