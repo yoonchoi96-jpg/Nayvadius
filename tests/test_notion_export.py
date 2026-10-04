@@ -28,6 +28,7 @@ def test_notion_manifest_is_deterministic_and_keeps_provenance(tmp_path: Path):
     assert payload1["entities"][0]["provenance"] == [{"source": "abraham", "document_id": "doc-1"}]
     assert payload1["schema_version"] == 2
     assert payload1["upsert_key"] == "id"
+    assert all("id" in relation for relation in payload1["relations"])
 
 
 def test_notion_manifest_projects_cross_domain_and_source_bridges(tmp_path: Path):
