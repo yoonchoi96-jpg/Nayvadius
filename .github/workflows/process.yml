@@ -3,6 +3,8 @@ name: Nayvadius Knowledge Pipeline
 on:
   push:
     branches: [main]
+    paths:
+      - data/abraham_export.jsonl
   workflow_dispatch:
     inputs:
       input_path:
@@ -13,9 +15,7 @@ on:
         required: false
         default: abraham
         type: choice
-        options:
-          - abraham
-          - jsonl
+        options: [abraham, jsonl]
       offset:
         required: false
         default: '0'
@@ -40,13 +40,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
       - run: pip install -e .
-
       - name: Process knowledge
         env:
           INPUT_PATH: ${{ inputs.input_path || 'data/abraham_export.jsonl' }}
@@ -59,8 +56,18 @@ jobs:
             exit 0
           fi
           python -m nayvadius.cli process --source "$SOURCE" --input "$INPUT_PATH" --offset "$OFFSET" --limit "$LIMIT" --output output
-
+      - name: Retry failed documents
+        if: always()
+        env:
+          INPUT_PATH: ${{ inputs.input_path || 'data/abraham_export.jsonl' }}
+          SOURCE: ${{ inputs.source || 'abraham' }}
+        run: |
+          if [ "$SOURCE" != "abraham" ] || [ ! -f "$INPUT_PATH" ]; then
+            exit 0
+          fi
+          python -m nayvadius.cli retry-failed --source abraham --input "$INPUT_PATH" --output output --max-attempts 5
       - name: Commit knowledge
+        if: always()
         run: |
           git config user.name 'nayvadius-bot'
           git config user.email 'actions@users.noreply.github.com'
