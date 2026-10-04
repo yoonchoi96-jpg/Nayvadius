@@ -50,6 +50,7 @@ def prune_orphan_entities():
   return len(rows)
 
 def save_vocabulary(vocabulary, entity_links=()):
+    """Persist one Abel vocabulary record and its current entity links."""
     with connect() as db:
         db.execute(
             "INSERT INTO vocabularies(id,word,traditional,pinyin,pos,meaning_ko,hsk_levels,wordbooks,source,metadata,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP) "
@@ -63,6 +64,12 @@ def save_vocabulary(vocabulary, entity_links=()):
             db.execute("INSERT OR REPLACE INTO entity_vocabulary_links VALUES(?,?,?,?,?)",
                        (name,entity_type,vocabulary.id,match_type,confidence))
 
+
+def vocabulary_links(vocabulary_id=None):
+ with connect() as c:
+  if vocabulary_id:
+   return c.execute("SELECT entity_name,entity_type,match_type,confidence FROM entity_vocabulary_links WHERE vocabulary_id=? ORDER BY confidence DESC,entity_name",(vocabulary_id,)).fetchall()
+  return c.execute("SELECT entity_name,entity_type,vocabulary_id,match_type,confidence FROM entity_vocabulary_links ORDER BY entity_name,vocabulary_id").fetchall()
 
 def status():
  with connect() as c: return {t:c.execute('SELECT COUNT(*) FROM '+t).fetchone()[0] for t in ('documents','entities','relations','document_relations','evidence','relation_evidence','entity_aliases','llm_cache','processing_failures','vocabularies','entity_vocabulary_links')}
