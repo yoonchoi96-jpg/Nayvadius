@@ -132,6 +132,31 @@ def write_knowledge_index(db, root):
     ]
     write_atomic(root / "_Knowledge Index.md", "\n".join(lines))
 
+def write_cross_domain_moc(db, root):
+    root = Path(root)
+    lines = [
+        "---", 'title: "Cross-Domain Connections"', 'type: "MOC"', "---", "",
+        "# Cross-Domain Connections", "",
+        "> Deterministic connections discovered across Abraham, Abel, and Jacques. Derived facts remain explicitly marked.",
+        "",
+    ]
+    try:
+        rows = db.execute(
+            "SELECT source_name,relation,target_name,confidence,rule FROM derived_relations ORDER BY source_name,target_name,relation"
+        ).fetchall()
+    except Exception as exc:
+        if "no such table" in str(exc):
+            rows = []
+        else:
+            raise
+    if rows:
+        for source, relation, target, confidence, rule in rows:
+            lines.append(f"- [[{source}]] — **{relation}** → [[{target}]] — {confidence:.3f} — `{rule}`")
+    else:
+        lines.append("- No derived connections yet.")
+    write_atomic(root / "_Cross-Domain Connections.md", "\n".join(lines) + "\n")
+
+
 def write_domain_mocs(db, root):
     root = Path(root) / "entities"
     for entity_type, title in [("MusicTracks", "Music Tracks"), ("MusicAlbums", "Music Albums")]:
