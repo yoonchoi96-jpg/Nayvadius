@@ -49,6 +49,8 @@ def test_load_jacques_json_creates_music_graph(tmp_path: Path):
     result = load_jacques_json(str(p))[0]
     assert result.document.source == "jacques"
     assert {e.name for e in result.entities} == {"Artist A", "Artist B", "Example Album", "Example Song"}
+    assert {e.entity_type for e in result.entities if e.name == "Example Album"} == {"MusicAlbums"}
+    assert {e.entity_type for e in result.entities if e.name == "Example Song"} == {"MusicTracks"}
     assert ("Artist A", "performed", "Example Song") == (
         result.relations[0].source, result.relations[0].relation, result.relations[0].target
     )
