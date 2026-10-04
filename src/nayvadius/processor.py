@@ -3,7 +3,7 @@ from .models import Document,Entity,Relation,ProcessedDocument
 
 ENTITY_TYPES = {
     "People", "Companies", "Organizations", "Countries", "Places",
-    "Products", "Technologies", "Concepts", "Events", "Institutions", "Brands",
+    "Products", "Technologies", "Concepts", "Events", "Institutions", "Brands", "MusicTracks", "MusicAlbums",
 }
 _ENTITY_TYPE_ALIASES = {
     "person": "People", "people": "People",
@@ -17,6 +17,8 @@ _ENTITY_TYPE_ALIASES = {
     "event": "Events", "events": "Events",
     "institution": "Institutions", "institutions": "Institutions",
     "brand": "Brands", "brands": "Brands",
+    "musictrack": "MusicTracks", "musictracks": "MusicTracks", "track": "MusicTracks", "tracks": "MusicTracks",
+    "musicalbum": "MusicAlbums", "musicalbums": "MusicAlbums", "album": "MusicAlbums", "albums": "MusicAlbums",
 }
 
 def normalize_entity_type(value):
