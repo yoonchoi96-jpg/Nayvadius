@@ -12,7 +12,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -e ".[dev]"
+      - run: pip install -e ".[dev]" > /tmp/install.log 2>&1 || true
+      - run: cat /tmp/install.log > /tmp/pytest.log
       - run: pytest -q -x > /tmp/pytest.log 2>&1 || true
       - run: python -m compileall -q src >> /tmp/pytest.log 2>&1 || true
       - uses: actions/upload-artifact@v4
