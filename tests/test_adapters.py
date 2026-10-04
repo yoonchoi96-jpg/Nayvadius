@@ -26,7 +26,7 @@ def test_load_abraham_jsonl_preserves_enrichment(tmp_path: Path):
     result = records[0]
 
     assert result.document.id == "rw-1"
-    assert result.entities[0].entity_type == "Companies"
+    assert result.entities[0].entity_type == "Organizations"
     assert result.relations[0].source == "Apple"
     assert result.translation_ko == "원문"
     assert result.document.metadata["readwise_id"] == "rw-1"
