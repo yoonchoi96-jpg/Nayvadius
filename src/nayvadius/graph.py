@@ -37,7 +37,7 @@ def write_graph(db, root):
             "type": entity_type,
             "aliases": [x.strip() for x in (aliases or "").split(",") if x.strip()],
             "confidence": confidence,
-            "provenance": [],
+            "provenance": [{"source": s, "document_id": d} for s, d in db.execute("SELECT source,document_id FROM entity_sources WHERE entity_name=? AND entity_type=? ORDER BY source,document_id", (name, entity_type))],
         }
 
     by_name = _canonical_id(rows, db)
@@ -79,7 +79,7 @@ def write_graph(db, root):
             edges.append(edge)
 
     payload = {
-        "schema_version": "2",
+        "schema_version": "3",
         "nodes": list(nodes.values()),
         "edges": edges,
     }
