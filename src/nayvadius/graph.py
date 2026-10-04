@@ -96,8 +96,37 @@ def write_graph(db, root):
             seen.add(key)
             edges.append(edge)
 
+    try:
+        derived_rows = db.execute(
+            "SELECT source_name,relation,target_name,confidence,rule,provenance FROM derived_relations"
+        )
+    except Exception as exc:
+        if "no such table" in str(exc):
+            derived_rows = []
+        else:
+            raise
+    for source, relation, target, confidence, rule, provenance in derived_rows:
+        source_ids = by_name.get(source, [])
+        target_ids = by_name.get(target, [])
+        if len(source_ids) != 1 or len(target_ids) != 1:
+            continue
+        key = (source_ids[0], relation, target_ids[0], "derived")
+        if key in seen:
+            continue
+        edge = {
+            "source": source_ids[0],
+            "relation": relation,
+            "target": target_ids[0],
+            "confidence": confidence,
+            "kind": "derived",
+            "rule": rule,
+            "provenance": json.loads(provenance),
+        }
+        seen.add(key)
+        edges.append(edge)
+
     payload = {
-        "schema_version": "4",
+        "schema_version": "5",
         "nodes": list(nodes.values()),
         "edges": edges,
     }
