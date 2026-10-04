@@ -106,3 +106,26 @@ def test_graph_exports_cross_domain_vocabulary_and_music_edges(tmp_path: Path):
     assert len(cross) == 2
     assert any(e["source"] == "People:Taylor Swift" and e["target"] == "Vocabulary:v1" for e in cross)
     assert any(e["source"] == "Vocabulary:v1" and e["target"] == "MusicTracks:Blank Space" for e in cross)
+
+
+def test_entity_aliases_are_isolated_by_type(tmp_path: Path):
+    from nayvadius.db import connect, save_entity_alias
+    db_path = tmp_path / "state.db"
+    db = connect(db_path)
+    db.execute("INSERT INTO entities VALUES(?,?,?,?)", ("Apple", "Companies", "", 1.0))
+    db.execute("INSERT INTO entities VALUES(?,?,?,?)", ("Apple", "Brands", "", 1.0))
+    db.commit()
+    db.close()
+
+    save_entity_alias("apple", "Apple", "Companies")
+    save_entity_alias("apple", "Apple", "Brands")
+
+    db = connect(db_path)
+    rows = db.execute(
+        "SELECT alias,canonical_name,entity_type FROM entity_aliases ORDER BY entity_type"
+    ).fetchall()
+    assert rows == [
+        ("apple", "Apple", "Brands"),
+        ("apple", "Apple", "Companies"),
+    ]
+    db.close()
