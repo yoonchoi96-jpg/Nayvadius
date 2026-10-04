@@ -203,31 +203,24 @@ def derive_cross_domain_links(db=None):
 
     # Extend the same deterministic bridge from track to album.
     album_rows = db.execute(
-        """SELECT c.right_id, c.right_kind, c.confidence, c.rule, c.provenance,
-                  r.target_name, r.target_name
+        """SELECT c.left_name, c.right_id, c.confidence, c.provenance,
+                  r.target_name, dr.document_id
              FROM cross_domain_links c
              JOIN relations r
                ON r.source_name=c.right_id
               AND r.relation='part_of'
-             WHERE c.right_kind='music_track'"""
+             LEFT JOIN document_relations dr
+               ON dr.source_name=r.source_name
+              AND dr.relation=r.relation
+              AND dr.target_name=r.target_name
+             WHERE c.left_type='Vocabulary'
+               AND c.right_kind='music_track'"""
     ).fetchall()
-    for vocabulary_id, _, confidence, rule, provenance, album_name, _ in album_rows:
+    for vocabulary_id, track_name, confidence, provenance, album_name, album_doc in album_rows:
         payload = json.loads(provenance)
         document_ids = list(payload.get("document_ids", []))
-        album_docs = [
-            row[0] for row in db.execute(
-                "SELECT document_id FROM document_relations "
-                "WHERE source_name=? AND relation='part_of' AND target_name=? "
-                "ORDER BY document_id",
-                (vocabulary_id, album_name),
-            )
-        ]
-        # The relation above is keyed by track, not vocabulary; recover its
-        # supporting document from the existing track provenance instead.
-        if not album_docs:
-            track_name = next(
-                (k for k in payload.get("shared_entity", {}) if k == "track"), None
-            )
+        if album_doc and album_doc not in document_ids:
+            document_ids.append(album_doc)
         db.execute(
             """INSERT OR REPLACE INTO cross_domain_links
                (left_name,left_type,right_id,right_kind,confidence,rule,provenance)
@@ -238,7 +231,10 @@ def derive_cross_domain_links(db=None):
              json.dumps({
                  "document_ids": document_ids,
                  "derived_from": payload,
-                 "album": album_name,
+                 "music": {
+                     "track": track_name,
+                     "album": album_name,
+                 },
              }, ensure_ascii=False)),
         )
 
