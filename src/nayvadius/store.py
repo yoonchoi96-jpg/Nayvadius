@@ -1,4 +1,4 @@
-from .db import connect, save_vocabulary
+from .db import connect, save_vocabulary, save_vocabulary_alias, save_vocabulary_source, resolve_vocabulary_id, link_document_vocabularies
 from .models import Vocabulary
 from .hash import content_hash
 import json
@@ -69,27 +69,51 @@ def result_is_current(result):
 
 def link_vocabulary(vocabulary, explicit_entities=()):
     with connect() as db:
+        alias_candidates = [_norm_alias(vocabulary.id), _norm_alias(vocabulary.word), _norm_alias(vocabulary.traditional)]
+        canonical_id = next((db.execute("SELECT canonical_id FROM vocabulary_aliases WHERE alias=?", (a,)).fetchone()[0]
+                             for a in alias_candidates if a and db.execute("SELECT canonical_id FROM vocabulary_aliases WHERE alias=?", (a,)).fetchone()), vocabulary.id)
+        existing = db.execute("SELECT word,traditional,pinyin,pos,meaning_ko,hsk_levels,wordbooks,source,metadata FROM vocabularies WHERE id=?", (canonical_id,)).fetchone()
+        if existing and canonical_id != vocabulary.id:
+            old_levels=set(filter(None,(existing[5] or "").split("|"))); old_levels.update(vocabulary.hsk_levels)
+            old_books=set(filter(None,(existing[6] or "").split("|"))); old_books.update(vocabulary.wordbooks)
+            old_meta=json.loads(existing[8] or "{}"); new_meta=dict(old_meta); new_meta.update(vocabulary.metadata)
+            from .models import Vocabulary as V
+            vocabulary=V(canonical_id, existing[0] or vocabulary.word, existing[1] or vocabulary.traditional,
+                         vocabulary.pinyin or existing[2] or "", vocabulary.pos or existing[3] or "",
+                         vocabulary.meaning_ko or existing[4] or "", tuple(sorted(old_levels)),
+                         tuple(sorted(old_books)), existing[7] or vocabulary.source, new_meta)
         explicit = {_norm_alias(x) for x in explicit_entities if _norm_alias(x)}
-        forms = {_norm_alias(vocabulary.word), _norm_alias(vocabulary.traditional)}
-        forms.discard("")
-        links = []
-        seen = set()
+        forms = {_norm_alias(vocabulary.word), _norm_alias(vocabulary.traditional)} - {""}
+        links=[]; seen=set()
         for value in explicit:
-            rows = db.execute("SELECT canonical_name,entity_type FROM entity_aliases WHERE alias=?", (value,)).fetchall()
-            for name, entity_type in rows:
-                key = (name, entity_type)
-                if key not in seen:
-                    links.append((name, entity_type, "explicit", 1.0))
-                    seen.add(key)
+            for name, entity_type in db.execute("SELECT canonical_name,entity_type FROM entity_aliases WHERE alias=?", (value,)):
+                key=(name,entity_type)
+                if key not in seen: links.append((name,entity_type,"explicit",1.0)); seen.add(key)
         for form in forms:
-            rows = db.execute("SELECT name,entity_type FROM entities WHERE lower(name)=?", (form,)).fetchall()
-            for name, entity_type in rows:
-                key = (name, entity_type)
-                if key not in seen:
-                    links.append((name, entity_type, "exact", 1.0))
-                    seen.add(key)
+            for name, entity_type in db.execute("SELECT name,entity_type FROM entities WHERE lower(name)=?", (form,)):
+                key=(name,entity_type)
+                if key not in seen: links.append((name,entity_type,"exact",1.0)); seen.add(key)
         save_vocabulary(vocabulary, links)
+        for alias in [vocabulary.id, vocabulary.word, vocabulary.traditional]:
+            save_vocabulary_alias(alias, vocabulary.id)
+        save_vocabulary_source(vocabulary.id, vocabulary.id, vocabulary.source, vocabulary.metadata)
         return links
+
+def link_document_to_vocabularies(document_id, content, explicit_ids=()):
+    with connect() as db:
+        explicit=[]
+        for value in explicit_ids:
+            canonical=resolve_vocabulary_id(value)
+            if canonical: explicit.append(canonical)
+        candidates=[]
+        for vid,word,traditional in db.execute("SELECT id,word,traditional FROM vocabularies"):
+            forms={x for x in (_norm_alias(word),_norm_alias(traditional)) if x}
+            text=_norm_alias(content)
+            if any(re.search(r'(?<![\\u4e00-\\u9fff])'+re.escape(form)+r'(?![\\u4e00-\\u9fff])',text) for form in forms):
+                candidates.append((vid,"exact",1.0))
+        link_document_vocabularies(document_id, set(explicit)|{x[0] for x in candidates},
+                                    "explicit" if explicit else "exact", 1.0)
+        return candidates
 
 
 def reconcile_all_vocabularies():
