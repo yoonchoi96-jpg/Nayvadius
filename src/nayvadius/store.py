@@ -65,6 +65,22 @@ def result_is_current(result):
         return False
     return hashlib.sha256(row[0].encode("utf-8")).hexdigest() == result_hash(result)
 
+
+def link_vocabulary(vocabulary, explicit_entities=()):
+    with connect() as db:
+        explicit = {_norm_alias(x) for x in explicit_entities if _norm_alias(x)}
+        word_forms = {_norm_alias(vocabulary.word), _norm_alias(vocabulary.traditional)}
+        links = []
+        for name, entity_type, aliases in db.execute("SELECT name,entity_type,aliases FROM entities"):
+            candidates = {_norm_alias(name)}
+            candidates.update(_norm_alias(x) for x in (aliases or "").split(",") if _norm_alias(x))
+            if explicit.intersection(candidates):
+                links.append((name, entity_type, "explicit", 1.0))
+            elif word_forms.intersection(candidates):
+                links.append((name, entity_type, "exact", 1.0))
+        save_vocabulary(vocabulary, links)
+        return links
+
 def upsert_document(doc, force=False):
     h = content_hash(doc.content)
     with connect() as db:
