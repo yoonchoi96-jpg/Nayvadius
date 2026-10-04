@@ -54,11 +54,11 @@ def write_entities_from_db(db, root):
             "## Aliases\n" + alias_lines + "\n\n"
             "## Sources\n" + provenance_lines + "\n\n"
             "## Documents\n"
-            + (("\\n".join("- [[" + title + "]] — " + source for title, source in db.execute("SELECT d.title,d.source FROM document_entities de JOIN documents d ON d.id=de.document_id WHERE de.entity_name=? AND de.entity_type=? ORDER BY d.title", (name, entity_type)).fetchall())) or "- None")
-            + "\\n\\n"
+            + (("\n".join("- [[" + title + "]] — " + source for title, source in db.execute("SELECT d.title,d.source FROM document_entities de JOIN documents d ON d.id=de.document_id WHERE de.entity_name=? AND de.entity_type=? ORDER BY d.title", (name, entity_type)).fetchall())) or "- None")
+            + "\n\n"
             "## Relations\n"
-            + (("\\n".join("- [[" + s + "]] — " + rel + " → [[" + t + "]]" for s, rel, t in db.execute("SELECT source_name,relation,target_name FROM relations WHERE source_name=? OR target_name=? ORDER BY relation,target_name", (name, name)).fetchall())) or "- None")
-            + "\\n\\n"
+            + (("\n".join("- [[" + s + "]] — " + rel + " → [[" + t + "]]" for s, rel, t in db.execute("SELECT source_name,relation,target_name FROM relations WHERE source_name=? OR target_name=? ORDER BY relation,target_name", (name, name)).fetchall())) or "- None")
+            + "\n\n"
             "## Mentioned in\n"
             "- Entity backlinks are generated from the canonical database.\n"
             + music_hint
@@ -80,6 +80,54 @@ def write_entity_moc(db, root):
         lines.append(f"- [[{name}]] — confidence: {confidence:.3f}")
     write_atomic(root / "_Entity Index.md", "\n".join(lines) + "\n")
 
+
+def write_knowledge_index(db, root):
+    root = Path(root)
+    root.mkdir(parents=True, exist_ok=True)
+    entity_counts = db.execute("SELECT entity_type,COUNT(*) FROM entities GROUP BY entity_type ORDER BY entity_type").fetchall()
+    doc_counts = db.execute("SELECT source,COUNT(*) FROM documents GROUP BY source ORDER BY source").fetchall()
+    vocab_count = db.execute("SELECT COUNT(*) FROM vocabularies").fetchone()[0]
+    relation_count = db.execute("SELECT COUNT(*) FROM relations").fetchone()[0]
+    source_entity_count = db.execute("SELECT COUNT(DISTINCT source) FROM entity_sources").fetchone()[0]
+    lines = [
+        "---", "title: \"Knowledge Index\"", "type: \"MOC\"", "---", "",
+        "# Knowledge Index", "",
+        "> Nayvadius canonical knowledge layer: Abraham + Abel + Jacques → normalized graph → Obsidian.", "",
+        "## System", "",
+        f"- [[entities/_Entity Index]] — canonical entities",
+        f"- [[vocabulary/_Vocabulary Index]] — vocabulary",
+        f"- [[graph.json]] — machine-readable knowledge graph",
+        "",
+        "## Entity Domains", "",
+    ]
+    lines.extend(f"- [[entities/{etype}/_Index]] — {count} entities" for etype, count in entity_counts)
+    lines += ["", "## Sources", ""]
+    lines.extend(f"- **{source}** — {count} documents" for source, count in doc_counts)
+    lines += [
+        "", "## Cross-Domain Graph", "",
+        f"- Entities: **{sum(count for _, count in entity_counts)}**",
+        f"- Relations: **{relation_count}**",
+        f"- Vocabulary: **{vocab_count}**",
+        f"- Source types: **{source_entity_count}**",
+        "",
+        "## Navigation", "",
+        "- [[entities/MusicTracks/_Index]] — Jacques tracks",
+        "- [[entities/MusicAlbums/_Index]] — Jacques albums",
+        "- [[vocabulary/HSK6/_Index]] — HSK 6",
+        "- [[vocabulary/HSK7-9/_Index]] — HSK 7–9",
+        "",
+    ]
+    write_atomic(root / "_Knowledge Index.md", "\n".join(lines))
+
+def write_domain_mocs(db, root):
+    root = Path(root) / "entities"
+    for entity_type, title in [("MusicTracks", "Music Tracks"), ("MusicAlbums", "Music Albums")]:
+        folder = root / entity_type
+        folder.mkdir(parents=True, exist_ok=True)
+        rows = db.execute("SELECT name,confidence FROM entities WHERE entity_type=? ORDER BY name", (entity_type,)).fetchall()
+        lines = ["---", f"title: \"{title}\"", 'type: "MOC"', "---", "", f"# {title}", ""]
+        lines.extend(f"- [[{name}]] — confidence: {confidence:.3f}" for name, confidence in rows)
+        write_atomic(folder / "_Index.md", "\n".join(lines) + "\n")
 
 def write_vocabulary_from_db(db, root):
     root = Path(root) / "vocabulary"
