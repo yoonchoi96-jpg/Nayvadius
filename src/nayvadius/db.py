@@ -12,15 +12,19 @@ def connect(path=None):
 
 def _migrate_entity_types(db):
     """Migrate legacy Companies/Brands into canonical Organizations."""
-    rows = db.execute("SELECT name,entity_type,aliases,confidence FROM entities").fetchall()
-    for name, entity_type, aliases, confidence in [r for r in rows if r[1] in ("Companies", "Brands")]:
+    legacy_entities = db.execute(
+        "SELECT name,entity_type,aliases,confidence FROM entities WHERE entity_type IN ('Companies','Brands')"
+    ).fetchall()
+
+    # Migrate entity rows and all type-bearing provenance/link tables.
+    for name, entity_type, aliases, confidence in legacy_entities:
         existing = db.execute(
             "SELECT aliases,confidence FROM entities WHERE name=? AND entity_type='Organizations'",
             (name,),
         ).fetchone()
-        old_aliases = [x.strip() for x in (aliases or "").split(",") if x.strip()]
+        old_aliases = {x.strip() for x in (aliases or "").split(",") if x.strip()}
         if existing:
-            merged = set(x.strip() for x in (existing[0] or "").split(",") if x.strip())
+            merged = {x.strip() for x in (existing[0] or "").split(",") if x.strip()}
             merged.update(old_aliases)
             db.execute(
                 "UPDATE entities SET aliases=?,confidence=? WHERE name=? AND entity_type='Organizations'",
@@ -32,22 +36,30 @@ def _migrate_entity_types(db):
                 "INSERT INTO entities(name,entity_type,aliases,confidence) VALUES(?,?,?,?)",
                 (name, "Organizations", aliases or "", confidence),
             )
+
         db.execute(
             "UPDATE OR IGNORE document_entities SET entity_type='Organizations' WHERE entity_name=? AND entity_type=?",
             (name, entity_type),
         )
-        db.execute("DELETE FROM document_entities WHERE entity_name=? AND entity_type=?", (name, entity_type))
+        db.execute(
+            "DELETE FROM document_entities WHERE entity_name=? AND entity_type=?",
+            (name, entity_type),
+        )
         db.execute(
             "UPDATE OR IGNORE entity_sources SET entity_type='Organizations' WHERE entity_name=? AND entity_type=?",
             (name, entity_type),
         )
-        db.execute("DELETE FROM entity_sources WHERE entity_name=? AND entity_type=?", (name, entity_type))
         db.execute(
-            "UPDATE entity_aliases SET entity_type='Organizations',canonical_name=? WHERE canonical_name=? AND entity_type=?",
-            (name, name, entity_type),
+            "DELETE FROM entity_sources WHERE entity_name=? AND entity_type=?",
+            (name, entity_type),
         )
-        db.execute("DELETE FROM entities WHERE name=? AND entity_type=?", (name, entity_type))
+        db.execute(
+            "DELETE FROM entities WHERE name=? AND entity_type=?",
+            (name, entity_type),
+        )
 
+    # Rebuild aliases through a temporary table so Company+Brand aliases can
+    # collapse safely onto one Organizations row under the composite key.
     info = db.execute("PRAGMA table_info(entity_aliases)").fetchall()
     pk_columns = [row[1] for row in info if row[5]]
     if pk_columns == ["alias"]:
@@ -57,17 +69,23 @@ def _migrate_entity_types(db):
             "alias TEXT NOT NULL,canonical_name TEXT NOT NULL,entity_type TEXT NOT NULL,"
             "PRIMARY KEY(alias,entity_type))"
         )
-        db.execute(
-            "INSERT OR REPLACE INTO entity_aliases(alias,canonical_name,entity_type) "
-            "SELECT alias,canonical_name,"
-            "CASE WHEN entity_type IN ('Companies','Brands') THEN 'Organizations' ELSE entity_type END "
-            "FROM entity_aliases_legacy"
-        )
-        db.execute("DROP TABLE entity_aliases_legacy")
+        alias_source = "entity_aliases_legacy"
     else:
+        db.execute("ALTER TABLE entity_aliases RENAME TO entity_aliases_migration")
         db.execute(
-            "UPDATE entity_aliases SET entity_type='Organizations' WHERE entity_type IN ('Companies','Brands')"
+            "CREATE TABLE entity_aliases("
+            "alias TEXT NOT NULL,canonical_name TEXT NOT NULL,entity_type TEXT NOT NULL,"
+            "PRIMARY KEY(alias,entity_type))"
         )
+        alias_source = "entity_aliases_migration"
+
+    db.execute(
+        "INSERT OR REPLACE INTO entity_aliases(alias,canonical_name,entity_type) "
+        "SELECT alias,canonical_name,"
+        "CASE WHEN entity_type IN ('Companies','Brands') THEN 'Organizations' ELSE entity_type END "
+        f"FROM {alias_source}"
+    )
+    db.execute(f"DROP TABLE {alias_source}")
 
 def cache_get(key):
  with connect() as c:
