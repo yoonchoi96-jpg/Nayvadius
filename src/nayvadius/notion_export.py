@@ -74,6 +74,7 @@ def write_notion_manifest(db, root: str) -> str:
         "FROM relations ORDER BY source_name,relation,target_name"
     ):
         relations.append({
+            "id": _page_id("relation", f"raw:{source_name}:{relation}:{target_name}"),
             "source": source_name,
             "relation": relation,
             "target": target_name,
