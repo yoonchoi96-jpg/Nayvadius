@@ -8,6 +8,8 @@ ENTITY_TYPES = {
 _ENTITY_TYPE_ALIASES = {
     "person": "People", "people": "People",
     "organization": "Organizations", "organizations": "Organizations",
+    "company": "Organizations", "companies": "Organizations",
+    "brand": "Organizations", "brands": "Organizations",
     "country": "Countries", "countries": "Countries",
     "place": "Places", "places": "Places",
     "product": "Products", "products": "Products",
