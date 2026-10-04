@@ -89,6 +89,42 @@ def write_notion_manifest(db, root: str) -> str:
                 "provenance": json.loads(provenance),
             })
 
+    if _table_exists(db, "cross_domain_links"):
+        for left_name, left_type, right_id, right_kind, confidence, rule, provenance in db.execute(
+            "SELECT left_name,left_type,right_id,right_kind,confidence,rule,provenance "
+            "FROM cross_domain_links ORDER BY left_name,right_kind,right_id"
+        ):
+            relations.append({
+                "id": _page_id("cross_domain", f"{left_type}:{left_name}:{right_kind}:{right_id}:{rule}"),
+                "source": left_name,
+                "source_type": left_type,
+                "relation": "cross_domain",
+                "target": right_id,
+                "target_kind": right_kind,
+                "confidence": confidence,
+                "kind": "cross_domain",
+                "rule": rule,
+                "provenance": json.loads(provenance),
+            })
+
+    if _table_exists(db, "source_bridge_links"):
+        for name, entity_type, source_a, source_b, confidence, rule, provenance in db.execute(
+            "SELECT entity_name,entity_type,source_a,source_b,confidence,rule,provenance "
+            "FROM source_bridge_links ORDER BY entity_type,name,source_a,source_b"
+        ):
+            relations.append({
+                "id": _page_id("source_bridge", f"{entity_type}:{name}:{source_a}:{source_b}:{rule}"),
+                "source": name,
+                "source_type": entity_type,
+                "relation": "source_bridge",
+                "target": f"{source_a}↔{source_b}",
+                "target_kind": "source_pair",
+                "confidence": confidence,
+                "kind": "source_bridge",
+                "rule": rule,
+                "provenance": json.loads(provenance),
+            })
+
     vocabularies = []
     if _table_exists(db, "vocabularies"):
         for row in db.execute(
@@ -109,7 +145,9 @@ def write_notion_manifest(db, root: str) -> str:
             })
 
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
+        "upsert_key": "id",
+        "notion_database_types": ["entity", "document", "relation", "vocabulary"],
         "projection": "notion",
         "generated_by": "nayvadius",
         "entities": entities,
