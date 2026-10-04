@@ -148,5 +148,7 @@ class Engine:
             write_vocabulary_from_db(db, self.output)
             write_vocabulary_moc(db, self.output)
             write_hsk_mocs(db, self.output)
+            write_domain_mocs(db, self.output)
+            write_knowledge_index(db, self.output)
         stats["db"] = status()
         return stats
