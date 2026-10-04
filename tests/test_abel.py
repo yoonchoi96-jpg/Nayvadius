@@ -30,3 +30,19 @@ def test_parse_abel_json_shape_preserves_memberships():
     assert value.hsk_levels == ("HSK6",)
     assert value.wordbooks == ("HSK 6급", "경제")
     assert value.metadata["entities"] == ["经济"]
+
+
+def test_duplicate_headwords_merge_across_sources():
+    from nayvadius.db import connect, merge_vocabulary
+    from nayvadius.models import Vocabulary
+    from nayvadius.store import link_vocabulary
+
+    a = Vocabulary(id="L6-0001", word="经济", hsk_levels=("HSK6",), wordbooks=("HSK 6급",), source="abel")
+    b = Vocabulary(id="L7-0001", word="经济", traditional="經濟", hsk_levels=("HSK7",), wordbooks=("HSK 7-9급",), source="abel")
+    link_vocabulary(a)
+    link_vocabulary(b)
+    with connect() as db:
+        rows = db.execute("SELECT id,hsk_levels,wordbooks FROM vocabularies WHERE word='经济'").fetchall()
+        assert len(rows) == 1
+        assert "HSK6" in rows[0][1] and "HSK7" in rows[0][1]
+        assert "HSK 6급" in rows[0][2] and "HSK 7-9급" in rows[0][2]
