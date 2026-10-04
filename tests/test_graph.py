@@ -112,20 +112,20 @@ def test_entity_aliases_are_isolated_by_type(tmp_path: Path):
     from nayvadius.db import connect, save_entity_alias
     db_path = tmp_path / "state.db"
     db = connect(db_path)
-    db.execute("INSERT INTO entities VALUES(?,?,?,?)", ("Apple", "Companies", "", 1.0))
-    db.execute("INSERT INTO entities VALUES(?,?,?,?)", ("Apple", "Brands", "", 1.0))
+    db.execute("INSERT INTO entities VALUES(?,?,?,?)", ("Apple", "Organizations", "", 1.0))
+    db.execute("INSERT INTO entities VALUES(?,?,?,?)", ("Apple", "Products", "", 1.0))
     db.commit()
     db.close()
 
-    save_entity_alias("apple", "Apple", "Companies")
-    save_entity_alias("apple", "Apple", "Brands")
+    save_entity_alias("apple", "Apple", "Organizations")
+    save_entity_alias("apple", "Apple", "Products")
 
     db = connect(db_path)
     rows = db.execute(
         "SELECT alias,canonical_name,entity_type FROM entity_aliases ORDER BY entity_type"
     ).fetchall()
     assert rows == [
-        ("apple", "Apple", "Brands"),
-        ("apple", "Apple", "Companies"),
+        ("apple", "Apple", "Organizations"),
+        ("apple", "Apple", "Products"),
     ]
     db.close()
