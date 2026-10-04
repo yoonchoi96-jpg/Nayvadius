@@ -59,3 +59,36 @@ def write_entity_moc(db, root):
             current = entity_type
         lines.append(f"- [[{name}]] — confidence: {confidence:.3f}")
     write_atomic(root / "_Entity Index.md", "\n".join(lines) + "\n")
+
+
+def write_vocabulary_from_db(db, root):
+    root = Path(root) / "vocabulary"
+    root.mkdir(parents=True, exist_ok=True)
+    rows = list(db.execute(
+        "SELECT id,word,traditional,pinyin,pos,meaning_ko,hsk_levels,wordbooks,source FROM vocabularies ORDER BY word"
+    ))
+    for vid, word, traditional, pinyin, pos, meaning_ko, hsk_levels, wordbooks, source in rows:
+        out = root / (safe(vid) + ".md")
+        levels = [x for x in (hsk_levels or "").split("|") if x]
+        books = [x for x in (wordbooks or "").split("|") if x]
+        links = list(db.execute(
+            "SELECT entity_name,entity_type FROM entity_vocabulary_links WHERE vocabulary_id=? ORDER BY entity_name",
+            (vid,)
+        ))
+        entity_lines = "\n".join(f"- [[{name}]] ({etype})" for name, etype in links) or "- None"
+        text = (
+            "---\n"
+            "id: " + yaml_scalar(vid) + "\n"
+            "word: " + yaml_scalar(word) + "\n"
+            "traditional: " + yaml_scalar(traditional) + "\n"
+            "pinyin: " + yaml_scalar(pinyin) + "\n"
+            "pos: " + yaml_scalar(pos) + "\n"
+            "source: " + yaml_scalar(source) + "\n"
+            "hsk_levels: [" + ", ".join(yaml_scalar(x) for x in levels) + "]\n"
+            "wordbooks: [" + ", ".join(yaml_scalar(x) for x in books) + "]\n"
+            "---\n\n"
+            "# " + word + "\n\n"
+            "## Meaning\n" + (meaning_ko or "- None") + "\n\n"
+            "## Linked entities\n" + entity_lines + "\n"
+        )
+        write_atomic(out, text)
