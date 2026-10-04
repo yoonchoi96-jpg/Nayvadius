@@ -68,6 +68,9 @@ def result_is_current(result):
 
 
 def link_vocabulary(vocabulary, explicit_entities=()):
+    source_id = vocabulary.id
+    source_name = vocabulary.source
+    source_metadata = dict(vocabulary.metadata)
     with connect() as db:
         alias_candidates = [_norm_alias(vocabulary.id), _norm_alias(vocabulary.word), _norm_alias(vocabulary.traditional)]
         canonical_id = next((db.execute("SELECT canonical_id FROM vocabulary_aliases WHERE alias=?", (a,)).fetchone()[0]
@@ -106,7 +109,7 @@ def link_vocabulary(vocabulary, explicit_entities=()):
                 merge_vocabulary(vocabulary.id, other_id)
         for alias in [vocabulary.id, vocabulary.word, vocabulary.traditional]:
             save_vocabulary_alias(alias, vocabulary.id)
-        save_vocabulary_source(vocabulary.id, vocabulary.id, vocabulary.source, vocabulary.metadata)
+        save_vocabulary_source(vocabulary.id, source_id, source_name, source_metadata)
         return links
 
 def link_document_to_vocabularies(document_id, content, explicit_ids=(), vocabulary_index=None):
