@@ -58,34 +58,27 @@ def _migrate_entity_types(db):
             (name, entity_type),
         )
 
-    # Rebuild aliases through a temporary table so Company+Brand aliases can
-    # collapse safely onto one Organizations row under the composite key.
+    # Only rebuild aliases when the legacy PK/schema or legacy entity types require it.
     info = db.execute("PRAGMA table_info(entity_aliases)").fetchall()
     pk_columns = [row[1] for row in info if row[5]]
-    if pk_columns == ["alias"]:
-        db.execute("ALTER TABLE entity_aliases RENAME TO entity_aliases_legacy")
+    legacy_alias_count = db.execute(
+        "SELECT COUNT(*) FROM entity_aliases WHERE entity_type IN ('Companies','Brands')"
+    ).fetchone()[0]
+    if pk_columns == ["alias"] or legacy_alias_count:
+        source_table = "entity_aliases_legacy" if pk_columns == ["alias"] else "entity_aliases_migration"
+        db.execute(f"ALTER TABLE entity_aliases RENAME TO {source_table}")
         db.execute(
             "CREATE TABLE entity_aliases("
             "alias TEXT NOT NULL,canonical_name TEXT NOT NULL,entity_type TEXT NOT NULL,"
             "PRIMARY KEY(alias,entity_type))"
         )
-        alias_source = "entity_aliases_legacy"
-    else:
-        db.execute("ALTER TABLE entity_aliases RENAME TO entity_aliases_migration")
         db.execute(
-            "CREATE TABLE entity_aliases("
-            "alias TEXT NOT NULL,canonical_name TEXT NOT NULL,entity_type TEXT NOT NULL,"
-            "PRIMARY KEY(alias,entity_type))"
+            "INSERT OR REPLACE INTO entity_aliases(alias,canonical_name,entity_type) "
+            "SELECT alias,canonical_name,"
+            "CASE WHEN entity_type IN ('Companies','Brands') THEN 'Organizations' ELSE entity_type END "
+            f"FROM {source_table}"
         )
-        alias_source = "entity_aliases_migration"
-
-    db.execute(
-        "INSERT OR REPLACE INTO entity_aliases(alias,canonical_name,entity_type) "
-        "SELECT alias,canonical_name,"
-        "CASE WHEN entity_type IN ('Companies','Brands') THEN 'Organizations' ELSE entity_type END "
-        f"FROM {alias_source}"
-    )
-    db.execute(f"DROP TABLE {alias_source}")
+        db.execute(f"DROP TABLE {source_table}")
 
 def cache_get(key):
  with connect() as c:
