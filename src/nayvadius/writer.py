@@ -213,6 +213,30 @@ def write_cross_domain_moc(db, root):
     else:
         lines.append("- No deterministic three-way connections yet.")
 
+    lines += ["", "## Source Bridges", ""]
+    try:
+        bridge_rows = db.execute("SELECT entity_name,entity_type,source_a,source_b,confidence,rule,provenance FROM source_bridge_links ORDER BY source_a,source_b,entity_type,entity_name").fetchall()
+    except Exception as exc:
+        if "no such table" in str(exc):
+            bridge_rows = []
+        else:
+            raise
+    if bridge_rows:
+        pair_counts = {}
+        for name, etype, source_a, source_b, confidence, rule, provenance in bridge_rows:
+            pair_counts[(source_a, source_b)] = pair_counts.get((source_a, source_b), 0) + 1
+        lines += ["### By Source Pair", ""]
+        for pair, count in sorted(pair_counts.items()):
+            lines.append(f"- **{pair[0]} ↔ {pair[1]}** — {count} canonical entities")
+        lines += ["", "### Canonical Entity Bridges", ""]
+        for name, etype, source_a, source_b, confidence, rule, provenance in bridge_rows:
+            payload = json.loads(provenance)
+            docs_a = ", ".join(payload.get("sources", {}).get(source_a, {}).get("document_ids", [])) or "—"
+            docs_b = ", ".join(payload.get("sources", {}).get(source_b, {}).get("document_ids", [])) or "—"
+            lines.append(f"- [[{name}]] ({etype}) — **{source_a} ↔ {source_b}** — {confidence:.3f} — `{rule}` — docs: {docs_a}; {docs_b}")
+    else:
+        lines.append("- No canonical multi-source bridges yet.")
+
     write_atomic(root / "_Cross-Domain Connections.md", "\n".join(lines) + "\n")
 
 
