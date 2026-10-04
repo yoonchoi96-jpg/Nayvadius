@@ -144,3 +144,32 @@ Companies and brands are intentionally unified under **Organizations**. Their di
 
 Entity merges are conservative: they stay within the same canonical type and require an explicit or evidence-backed merge reason. Merge decisions are retained in the entity merge audit log.
 
+
+
+## Deterministic second-stage QA
+
+Nayvadius runs an API-free QA pass over its persisted SQLite state before knowledge
+changes are committed:
+
+```bash
+python -m nayvadius.cli qa --db data/nayvadius.db --output output
+```
+
+The QA gate checks:
+
+- canonical entity ontology and confidence ranges
+- ambiguous alias collisions (warning; never auto-merged)
+- orphan document/entity and document/relation links
+- relation endpoint existence, naming, self-loops, and confidence
+- relation-evidence provenance and evidence status
+- orphan processing results
+- invalid/self entity merge audit records
+- persistent processing failures as warnings
+
+Errors fail CI. Warnings are retained for later semantic review and do not consume
+an LLM/API call. The resulting machine-readable report is written to
+`output/qa_report.json`.
+
+This is deliberately separate from Abraham's first-stage structural QA:
+Abraham validates ingestion/extraction state; Nayvadius validates the integrity
+and downstream consistency of the canonical knowledge graph.
