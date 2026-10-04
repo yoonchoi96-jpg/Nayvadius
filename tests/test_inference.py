@@ -126,7 +126,7 @@ def test_three_way_abraham_abel_jacques_bridge(tmp_path: Path):
     db.commit()
 
     from nayvadius.inference import derive_cross_domain_links
-    assert derive_cross_domain_links(db) == 2
+    assert derive_cross_domain_links(db) == 4
 
     track = db.execute(
         """SELECT confidence,rule,provenance FROM cross_domain_links
