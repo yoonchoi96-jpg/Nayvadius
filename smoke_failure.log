@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/runner/work/Nayvadius/Nayvadius/src/nayvadius/cli.py", line 2, in <module>
+    from .engine import Engine
+  File "/home/runner/work/Nayvadius/Nayvadius/src/nayvadius/engine.py", line 145
+    stats["derived_relations"] = derive_relation_chains()\n        stats["cross_domain_links"] = derive_cross_domain_links()
+                                                          ^
+SyntaxError: unexpected character after line continuation character
