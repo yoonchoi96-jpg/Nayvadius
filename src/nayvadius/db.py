@@ -49,8 +49,23 @@ def prune_orphan_entities():
    db.execute("DELETE FROM entity_aliases WHERE canonical_name=? AND entity_type=?",(name,entity_type)); db.execute("DELETE FROM entities WHERE name=? AND entity_type=?",(name,entity_type))
   return len(rows)
 
+def save_vocabulary(vocabulary, entity_links=()):
+    with connect() as db:
+        db.execute(
+            "INSERT INTO vocabularies(id,word,traditional,pinyin,pos,meaning_ko,hsk_levels,wordbooks,source,metadata,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP) "
+            "ON CONFLICT(id) DO UPDATE SET word=excluded.word,traditional=excluded.traditional,pinyin=excluded.pinyin,pos=excluded.pos,meaning_ko=excluded.meaning_ko,hsk_levels=excluded.hsk_levels,wordbooks=excluded.wordbooks,source=excluded.source,metadata=excluded.metadata,updated_at=CURRENT_TIMESTAMP",
+            (vocabulary.id,vocabulary.word,vocabulary.traditional,vocabulary.pinyin,vocabulary.pos,vocabulary.meaning_ko,
+             "|".join(vocabulary.hsk_levels),"|".join(vocabulary.wordbooks),vocabulary.source,
+             json.dumps(vocabulary.metadata,ensure_ascii=False))
+        )
+        db.execute("DELETE FROM entity_vocabulary_links WHERE vocabulary_id=?",(vocabulary.id,))
+        for name,entity_type,match_type,confidence in entity_links:
+            db.execute("INSERT OR REPLACE INTO entity_vocabulary_links VALUES(?,?,?,?,?)",
+                       (name,entity_type,vocabulary.id,match_type,confidence))
+
+
 def status():
- with connect() as c: return {t:c.execute('SELECT COUNT(*) FROM '+t).fetchone()[0] for t in ('documents','entities','relations','document_relations','evidence','relation_evidence','entity_aliases','llm_cache','processing_failures')}
+ with connect() as c: return {t:c.execute('SELECT COUNT(*) FROM '+t).fetchone()[0] for t in ('documents','entities','relations','document_relations','evidence','relation_evidence','entity_aliases','llm_cache','processing_failures','vocabularies','entity_vocabulary_links')}
 
 def merge_entity(canonical_name, duplicate_name, entity_type):
  with connect() as db:
