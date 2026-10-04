@@ -55,3 +55,17 @@ def test_load_jacques_json_creates_music_graph(tmp_path: Path):
         result.relations[0].source, result.relations[0].relation, result.relations[0].target
     )
     assert "analysis" in result.document.content
+
+
+def test_jacques_record_keeps_source_provenance():
+    from nayvadius.adapters import parse_jacques_track
+    result = parse_jacques_track({
+        "track_id": "track-provenance",
+        "title": "Provenance Song",
+        "artists": "Artist",
+        "album": "Album",
+        "analysis": {"bpm": 120},
+    })
+    assert result.document.source == "jacques"
+    assert result.document.id == "track-provenance"
+    assert result.document.metadata["jacques"]["analysis"]["bpm"] == 120
