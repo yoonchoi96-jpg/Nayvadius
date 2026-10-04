@@ -1,4 +1,5 @@
 from .db import connect, save_vocabulary
+from .models import Vocabulary
 from .hash import content_hash
 import json
 import re
@@ -69,17 +70,45 @@ def result_is_current(result):
 def link_vocabulary(vocabulary, explicit_entities=()):
     with connect() as db:
         explicit = {_norm_alias(x) for x in explicit_entities if _norm_alias(x)}
-        word_forms = {_norm_alias(vocabulary.word), _norm_alias(vocabulary.traditional)}
+        forms = {_norm_alias(vocabulary.word), _norm_alias(vocabulary.traditional)}
+        forms.discard("")
         links = []
-        for name, entity_type, aliases in db.execute("SELECT name,entity_type,aliases FROM entities"):
-            candidates = {_norm_alias(name)}
-            candidates.update(_norm_alias(x) for x in (aliases or "").split(",") if _norm_alias(x))
-            if explicit.intersection(candidates):
-                links.append((name, entity_type, "explicit", 1.0))
-            elif word_forms.intersection(candidates):
-                links.append((name, entity_type, "exact", 1.0))
+        seen = set()
+        for value in explicit:
+            rows = db.execute("SELECT canonical_name,entity_type FROM entity_aliases WHERE alias=?", (value,)).fetchall()
+            for name, entity_type in rows:
+                key = (name, entity_type)
+                if key not in seen:
+                    links.append((name, entity_type, "explicit", 1.0))
+                    seen.add(key)
+        for form in forms:
+            rows = db.execute("SELECT name,entity_type FROM entities WHERE lower(name)=?", (form,)).fetchall()
+            for name, entity_type in rows:
+                key = (name, entity_type)
+                if key not in seen:
+                    links.append((name, entity_type, "exact", 1.0))
+                    seen.add(key)
         save_vocabulary(vocabulary, links)
         return links
+
+
+def reconcile_all_vocabularies():
+    with connect() as db:
+        rows = db.execute("SELECT id,word,traditional,pinyin,pos,meaning_ko,hsk_levels,wordbooks,source,metadata FROM vocabularies").fetchall()
+    total_links = 0
+    for row in rows:
+        metadata = json.loads(row[9] or "{}")
+        vocabulary = Vocabulary(
+            id=row[0], word=row[1], traditional=row[2] or "", pinyin=row[3] or "",
+            pos=row[4] or "", meaning_ko=row[5] or "",
+            hsk_levels=tuple(x for x in (row[6] or "").split("|") if x),
+            wordbooks=tuple(x for x in (row[7] or "").split("|") if x),
+            source=row[8] or "abel", metadata=metadata,
+        )
+        explicit = metadata.get("entities", []) if isinstance(metadata, dict) else []
+        total_links += len(link_vocabulary(vocabulary, explicit))
+    return total_links
+
 
 def upsert_document(doc, force=False):
     h = content_hash(doc.content)
