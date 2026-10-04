@@ -92,3 +92,34 @@ Recommended fields:
 - `document_type`
 
 Processing is incremental by document content hash. Workflow batches can use `offset` and `limit` when a large Abraham export is introduced.
+
+
+## Abel integration
+
+Abel is a separate vocabulary source. It remains responsible for Naver Dictionary collection and HSK curation; Nayvadius integrates the resulting vocabulary into the canonical knowledge graph.
+
+Supported Abel inputs:
+- CSV exports such as `hsk30_level6_1140.csv`
+- JSONL exports with richer metadata
+
+Canonical vocabulary is stored separately from entities:
+
+`vocabularies → entity_vocabulary_links → canonical entities`
+
+This preserves Abel provenance instead of overwriting Abraham knowledge. Exact Chinese word/traditional-form matches are linked automatically; Abraham/Abel can also provide explicit entity names through `metadata.entities`.
+
+The dedicated GitHub Actions workflow is:
+
+`.github/workflows/abel.yml`
+
+Recommended handoff paths:
+- `data/abel_export.csv`
+- `data/abel_export.jsonl`
+
+The resulting vocabulary notes are written to `output/vocabulary/`, while canonical entity notes remain under `output/entities/`.
+
+### Multi-source principle
+
+Abraham answers **what should become knowledge**. Abel supplies **language/vocabulary evidence**. Nayvadius answers **how those records connect to the same canonical knowledge graph**.
+
+Neither source is allowed to silently overwrite the other source's provenance.
