@@ -1,4 +1,4 @@
-from .db import connect, save_vocabulary, save_vocabulary_alias, save_vocabulary_source, resolve_vocabulary_id, link_document_vocabularies
+from .db import connect, save_vocabulary, save_vocabulary_alias, save_vocabulary_source, resolve_vocabulary_id, link_document_vocabularies, merge_vocabulary
 from .models import Vocabulary
 from .hash import content_hash
 import json
