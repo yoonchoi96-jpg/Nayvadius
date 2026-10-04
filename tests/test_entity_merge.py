@@ -3,12 +3,13 @@ from pathlib import Path
 from nayvadius.db import connect, merge_entity
 
 
-def test_entity_merge_is_same_type_and_audited(tmp_path: Path):
+def test_entity_merge_is_same_type_and_audited(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("nayvadius.config.settings.state_path", str(tmp_path / "state.db"))
     db_path = tmp_path / "state.db"
     db = connect(db_path)
     db.execute("INSERT INTO entities VALUES(?,?,?,?)", ("Acme Inc.", "Organizations", "Acme", 0.9))
     db.execute("INSERT INTO entities VALUES(?,?,?,?)", ("Acme", "Organizations", "", 0.8))
-    db.execute("INSERT INTO documents(document_id,title,content_hash,source,status) VALUES(?,?,?,?,?)", ("d1", "doc", "h", "abraham", "done"))
+    db.execute("INSERT INTO documents(id,title,content_hash,source,status) VALUES(?,?,?,?,?)", ("d1", "doc", "h", "abraham", "done"))
     db.execute("INSERT INTO document_entities VALUES(?,?,?,?)", ("d1", "Acme", "Organizations", 0.8))
     db.execute("INSERT INTO entity_sources VALUES(?,?,?,?)", ("Acme", "Organizations", "abraham", "d1"))
     db.commit()
@@ -41,7 +42,8 @@ def test_entity_merge_rejects_unknown_reason(tmp_path: Path):
         raise AssertionError("unknown merge reason must be rejected")
 
 
-def test_entity_merge_preserves_existing_document_link_confidence(tmp_path: Path):
+def test_entity_merge_preserves_existing_document_link_confidence(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("nayvadius.config.settings.state_path", str(tmp_path / "state.db"))
     db_path = tmp_path / "state.db"
     db = connect(db_path)
     db.execute("INSERT INTO entities VALUES(?,?,?,?)", ("Canonical", "People", "", 0.9))
