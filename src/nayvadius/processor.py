@@ -3,7 +3,7 @@ from .models import Document,Entity,Relation,ProcessedDocument
 
 ENTITY_TYPES = {
     "People", "Organizations", "Countries", "Places",
-    "Products", "Technologies", "Concepts", "Events", "Institutions", "Brands", "MusicTracks", "MusicAlbums",
+    "Products", "Technologies", "Concepts", "Events", "Institutions", "MusicTracks", "MusicAlbums",
 }
 _ENTITY_TYPE_ALIASES = {
     "person": "People", "people": "People",
@@ -18,6 +18,15 @@ _ENTITY_TYPE_ALIASES = {
     "musictrack": "MusicTracks", "musictracks": "MusicTracks", "track": "MusicTracks", "tracks": "MusicTracks",
     "musicalbum": "MusicAlbums", "musicalbums": "MusicAlbums", "album": "MusicAlbums", "albums": "MusicAlbums",
 }
+
+RELATION_TYPES = {
+    "owns", "owned_by", "operates", "operated_by", "brand_of",
+    "subsidiary_of", "parent_of", "acquired", "acquired_by",
+}
+
+def normalize_relation_type(value):
+    key = str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
+    return key if key in RELATION_TYPES else str(value or "").strip()
 
 def normalize_entity_type(value):
     key = str(value or "").strip().lower()
@@ -73,7 +82,7 @@ def parse_llm(obj: dict, doc: Document) -> ProcessedDocument:
             continue
         source = text(raw.get("source"))
         target = text(raw.get("target"))
-        relation = text(raw.get("relation"))
+        relation = normalize_relation_type(raw.get("relation"))
         if source and target and relation:
             relations.append(Relation(source, relation, target, confidence(raw.get("confidence"))))
 
