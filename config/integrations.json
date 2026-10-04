@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "role": "personal_system_integration_hub",
+  "principle": "small_apps_collect_or_specialize; Nayvadius integrates canonical state and downstream knowledge views",
+  "sources": [
+    {
+      "id": "abraham",
+      "domain": "knowledge",
+      "role": "knowledge_admission",
+      "upstream_repo": "yoonchoi96-jpg/abraham",
+      "contract": "data/abraham_export.jsonl",
+      "ownership": ["selection", "rating", "translation", "entity_extraction", "relation_extraction"]
+    },
+    {
+      "id": "abel",
+      "domain": "language",
+      "role": "vocabulary_source",
+      "upstream_repo": "yoonchoi96-jpg/abel",
+      "contract": "Abel vocabulary export",
+      "ownership": ["Naver Dictionary collection", "HSK curation", "wordbooks"]
+    },
+    {
+      "id": "jacques",
+      "domain": "music",
+      "role": "music_intelligence_source",
+      "upstream_repo": "yoonchoi96-jpg/Jacques",
+      "contract": "Jacques music DB/export",
+      "ownership": ["Spotify ingestion", "audio/enrichment", "editorial source sync", "music analysis"]
+    }
+  ],
+  "integration": {
+    "owner": "nayvadius",
+    "responsibilities": [
+      "canonicalization",
+      "deduplication",
+      "cross-source linking",
+      "provenance",
+      "evidence",
+      "knowledge graph",
+      "downstream Obsidian/Notion projection"
+    ]
+  },
+  "outputs": [
+    "Obsidian",
+    "Notion"
+  ]
+}
