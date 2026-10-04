@@ -1,0 +1,25 @@
+name: Nayvadius QA Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - src/nayvadius/qa.py
+      - tests/test_qa.py
+      - .github/workflows/qa-tests.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e '.[dev]'
+      - run: pytest -q tests/test_qa.py
