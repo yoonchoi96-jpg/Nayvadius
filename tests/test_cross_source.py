@@ -1,7 +1,57 @@
-[object Object]
+import sqlite3
+from pathlib import Path
+
+from nayvadius.db import connect, save_result
+from nayvadius.models import Document, Entity, ProcessedDocument, Relation
+from nayvadius.writer import write_entities_from_db
+
+
+def _result(doc_id, source, entity_name, entity_type="People"):
+    return ProcessedDocument(
+        Document(doc_id, doc_id, "content", source),
+        "summary",
+        [Entity(entity_name, entity_type, 0.95)],
+        [f"source/{source}"],
+    )
+
+
+def test_same_canonical_entity_keeps_both_source_provenance(tmp_path, monkeypatch):
+    state = tmp_path / "state.db"
+    monkeypatch.setattr("nayvadius.config.settings.state_path", str(state))
+
+    save_result(_result("doc-a", "abraham", "Taylor Swift"))
+    save_result(_result("doc-b", "jacques", "Taylor Swift"))
+
+    with connect() as db:
+        entity = db.execute(
+            "SELECT name,entity_type FROM entities WHERE name='Taylor Swift'"
+        ).fetchall()
+        sources = db.execute(
+            """SELECT source,document_id FROM entity_sources
+               WHERE entity_name='Taylor Swift' AND entity_type='People'
+               ORDER BY source,document_id"""
+        ).fetchall()
+
+    assert entity == [("Taylor Swift", "People")]
+    assert sources == [("abraham", "doc-a"), ("jacques", "doc-b")]
+
+
+def test_same_alias_across_entity_types_stays_separate(tmp_path, monkeypatch):
+    state = tmp_path / "state.db"
+    monkeypatch.setattr("nayvadius.config.settings.state_path", str(state))
+
+    save_result(_result("doc-company", "abraham", "Apple Inc.", "Companies"))
+    save_result(_result("doc-brand", "jacques", "Apple Inc.", "Brands"))
+
+    with connect() as db:
+        rows = db.execute(
+            "SELECT name,entity_type FROM entities WHERE name='Apple Inc.' ORDER BY entity_type"
+        ).fetchall()
+
+    assert rows == [("Apple Inc.", "Brands"), ("Apple Inc.", "Companies")]
+
 
 def test_entity_writer_contains_documents_and_relations(tmp_path, monkeypatch):
-    from nayvadius.writer import write_entities_from_db
     state = tmp_path / "state.db"
     monkeypatch.setattr("nayvadius.config.settings.state_path", str(state))
     save_result(_result("doc-a", "abraham", "Taylor Swift"))
