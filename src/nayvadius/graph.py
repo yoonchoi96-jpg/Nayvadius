@@ -11,9 +11,14 @@ def _canonical_id(rows, db):
             alias = alias.strip()
             if alias and node_id not in by_name.setdefault(alias, []):
                 by_name[alias].append(node_id)
-    for alias, canonical_name, entity_type in db.execute(
-        "SELECT alias,canonical_name,entity_type FROM entity_aliases"
-    ):
+    try:
+        alias_rows = db.execute("SELECT alias,canonical_name,entity_type FROM entity_aliases")
+    except Exception as exc:
+        if "no such table" in str(exc):
+            alias_rows = []
+        else:
+            raise
+    for alias, canonical_name, entity_type in alias_rows:
         node_id = f"{entity_type}:{canonical_name}"
         if node_id in by_name.get(canonical_name, []) and node_id not in by_name.setdefault(alias, []):
             by_name[alias].append(node_id)
