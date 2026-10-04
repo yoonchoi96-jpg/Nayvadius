@@ -5,12 +5,9 @@ from nayvadius.db import connect
 
 def test_aliases_canonicalize_same_entity(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("nayvadius.config.settings.state_path", str(tmp_path / "state.db"))
-    first = ProcessedDocument(Document("1", "A", "Apple Inc."), "a",
-        [Entity("Apple Inc.", "Companies", 0.9, ("Apple",))], ["source/test"])
+    first = ProcessedDocument(Document("1", "A", "Apple Inc."), "a", [Entity("Apple Inc.", "Companies", 0.9, ("Apple",))], ["source/test"])
     upsert_document(first.document); save_result(first)
-    second = ProcessedDocument(Document("2", "B", "Apple"), "b",
-        [Entity("Apple", "Companies", 0.9, ("Apple Inc.",))], ["source/test"],
-        relations=[Relation("Apple", "related_to", "Apple")])
+    second = ProcessedDocument(Document("2", "B", "Apple"), "b", [Entity("Apple", "Companies", 0.9, ("Apple Inc.",))], ["source/test"], relations=[Relation("Apple", "related_to", "Apple")])
     upsert_document(second.document); save_result(second)
     with connect() as db:
         entities = db.execute("SELECT name,entity_type FROM entities ORDER BY name").fetchall()
@@ -21,36 +18,25 @@ def test_aliases_canonicalize_same_entity(tmp_path: Path, monkeypatch):
     assert ("apple inc.", "Apple Inc.", "Companies") in aliases
     assert relation == ("Apple Inc.", "Apple Inc.")
 
-
 def test_conflicting_alias_does_not_overwrite_existing_mapping(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("nayvadius.config.settings.state_path", str(tmp_path / "state.db"))
-    first = ProcessedDocument(Document("1", "A", "Apple"), "a",
-        [Entity("Apple Inc.", "Companies", 0.9, ("Apple",))], ["source/test"])
-    second = ProcessedDocument(Document("2", "B", "Apple"), "b",
-        [Entity("Apple Music", "Companies", 0.9, ("Apple",))], ["source/test"])
+    first = ProcessedDocument(Document("1", "A", "Apple"), "a", [Entity("Apple Inc.", "Companies", 0.9, ("Apple",))], ["source/test"])
+    second = ProcessedDocument(Document("2", "B", "Apple"), "b", [Entity("Apple Music", "Companies", 0.9, ("Apple",))], ["source/test"])
     upsert_document(first.document); save_result(first)
     upsert_document(second.document); save_result(second)
     with connect() as db:
-        rows = db.execute(
-            "SELECT alias,canonical_name,entity_type FROM entity_aliases WHERE alias='apple'"
-        ).fetchall()
+        rows = db.execute("SELECT alias,canonical_name,entity_type FROM entity_aliases WHERE alias='apple'").fetchall()
     assert rows == [("apple", "Apple Inc.", "Companies")]
 
 def test_relation_resolves_historical_alias(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("nayvadius.config.settings.state_path", str(tmp_path / "state.db"))
-    first = ProcessedDocument(Document("1", "A", "Apple Inc."), "a",
-        [Entity("Apple Inc.", "Companies", 0.9, ("Apple",))], ["source/test"])
+    first = ProcessedDocument(Document("1", "A", "Apple Inc."), "a", [Entity("Apple Inc.", "Companies", 0.9, ("Apple",))], ["source/test"])
     upsert_document(first.document); save_result(first)
-    second = ProcessedDocument(Document("2", "B", "Microsoft"), "b",
-        [Entity("Microsoft", "Companies", 0.9, ())], ["source/test"],
-        relations=[Relation("Microsoft", "partner_of", "Apple")])
+    second = ProcessedDocument(Document("2", "B", "Microsoft"), "b", [Entity("Microsoft", "Companies", 0.9, ())], ["source/test"], relations=[Relation("Microsoft", "partner_of", "Apple")])
     upsert_document(second.document); save_result(second)
     with connect() as db:
-        relation = db.execute(
-            "SELECT source_name,target_name FROM relations WHERE relation='partner_of'"
-        ).fetchone()
+        relation = db.execute("SELECT source_name,target_name FROM relations WHERE relation='partner_of'").fetchone()
     assert relation == ("Microsoft", "Apple Inc.")
-
 
 def test_merge_entity_rewires_relations_and_evidence(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("nayvadius.config.settings.state_path", str(tmp_path / "state.db"))
@@ -73,10 +59,8 @@ def test_merge_entity_rewires_relations_and_evidence(tmp_path: Path, monkeypatch
     assert rel == [("Apple Inc.", "Beats", 0.9)]
     assert ev == [("Apple Inc.",)]
 
-
 def test_abraham_refreshes_enrichment_when_content_is_unchanged(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("nayvadius.config.settings.state_path", str(tmp_path / "state.db"))
-    from nayvadius.store import upsert_document
     doc = Document("same", "Same", "unchanged")
     first = ProcessedDocument(doc, "first", [Entity("Apple Inc.", "Companies", 0.8, ("Apple",))], ["source/test"])
     second = ProcessedDocument(doc, "second", [Entity("Microsoft", "Companies", 0.9, ())], ["source/test"])
@@ -90,7 +74,6 @@ def test_abraham_refreshes_enrichment_when_content_is_unchanged(tmp_path: Path, 
     assert names == [("Apple Inc.",), ("Microsoft",)]
     assert '"summary": "second"' in payload
 
-
 def test_prune_orphan_entities_removes_unused_aliases(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("nayvadius.config.settings.state_path", str(tmp_path / "state.db"))
     from nayvadius.db import prune_orphan_entities
@@ -102,3 +85,16 @@ def test_prune_orphan_entities_removes_unused_aliases(tmp_path: Path, monkeypatc
     with connect() as db:
         assert db.execute("SELECT * FROM entities").fetchall() == []
         assert db.execute("SELECT * FROM entity_aliases").fetchall() == []
+
+def test_failure_queue_is_bounded_and_clears_on_success(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("nayvadius.config.settings.state_path", str(tmp_path / "state.db"))
+    from nayvadius.db import record_failure, failed_document_ids, clear_failure
+    for _ in range(7):
+        record_failure("bad-1", "boom", max_attempts=5)
+    with connect() as db:
+        row = db.execute("SELECT attempts,last_error FROM processing_failures WHERE document_id='bad-1'").fetchone()
+    assert row == (5, "boom")
+    assert failed_document_ids(5) == []
+    clear_failure("bad-1")
+    with connect() as db:
+        assert db.execute("SELECT * FROM processing_failures").fetchall() == []
