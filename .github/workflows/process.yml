@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - data/abraham_export.jsonl
+      - data/jacques_export.json
   workflow_dispatch:
     inputs:
       input_path:
@@ -15,7 +16,7 @@ on:
         required: false
         default: abraham
         type: choice
-        options: [abraham, abel, jsonl]
+        options: [abraham, abel, jacques, jsonl]
       offset:
         required: false
         default: '0'
