@@ -48,7 +48,7 @@ def test_entity_merge_preserves_existing_document_link_confidence(tmp_path: Path
     db = connect(db_path)
     db.execute("INSERT INTO entities VALUES(?,?,?,?)", ("Canonical", "People", "", 0.9))
     db.execute("INSERT INTO entities VALUES(?,?,?,?)", ("Alias", "People", "", 0.8))
-    db.execute("INSERT INTO documents(document_id,title,content_hash,source,status) VALUES(?,?,?,?,?)", ("d1", "doc", "h", "abraham", "done"))
+    db.execute("INSERT INTO documents(id,title,content_hash,source,status) VALUES(?,?,?,?,?)", ("d1", "doc", "h", "abraham", "done"))
     db.execute("INSERT INTO document_entities VALUES(?,?,?,?)", ("d1", "Canonical", "People", 0.4))
     db.execute("INSERT INTO document_entities VALUES(?,?,?,?)", ("d1", "Alias", "People", 0.8))
     db.commit()
