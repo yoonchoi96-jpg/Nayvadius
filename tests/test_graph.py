@@ -133,8 +133,8 @@ def test_entity_aliases_are_isolated_by_type(tmp_path: Path):
 
 def test_company_brand_relationships_use_organizations():
     from nayvadius.processor import normalize_entity_type, normalize_relation_type
-    assert normalize_entity_type("company") == "Concepts"
-    assert normalize_entity_type("brand") == "Concepts"
+    assert normalize_entity_type("company") == "Organizations"
+    assert normalize_entity_type("brand") == "Organizations"
     assert normalize_entity_type("organization") == "Organizations"
     assert normalize_relation_type("owned by") == "owned_by"
     assert normalize_relation_type("brand-of") == "brand_of"
