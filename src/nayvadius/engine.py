@@ -8,7 +8,7 @@ from .providers import LLMProvider
 from .writer import write_markdown, write_entities, write_entities_from_db, write_entity_moc, write_vocabulary_from_db, write_vocabulary_moc, write_hsk_mocs, write_knowledge_index, write_domain_mocs, write_cross_domain_moc
 from .graph import write_graph
 from .inference import derive_relation_chains, derive_cross_domain_links
-from .source_bridges import derive_source_bridge_links, augment_graph_with_source_bridges
+from .source_bridges import derive_source_bridge_links
 
 
 class Engine:
