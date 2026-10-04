@@ -1,4 +1,5 @@
-import json\nfrom .db import connect
+import json
+from .db import connect
 
 
 def derive_relation_chains(db=None):
