@@ -108,7 +108,8 @@ def test_graph_exports_cross_domain_vocabulary_and_music_edges(tmp_path: Path):
     assert any(e["source"] == "Vocabulary:v1" and e["target"] == "MusicTracks:Blank Space" for e in cross)
 
 
-def test_entity_aliases_are_isolated_by_type(tmp_path: Path):
+def test_entity_aliases_are_isolated_by_type(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("nayvadius.config.settings.state_path", str(tmp_path / "state.db"))
     from nayvadius.db import connect, save_entity_alias
     db_path = tmp_path / "state.db"
     db = connect(db_path)
