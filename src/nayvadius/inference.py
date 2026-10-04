@@ -213,20 +213,26 @@ def derive_cross_domain_links(db=None):
         link_count += 1
 
     # Extend the same deterministic bridge from track to album.
-    album_rows = db.execute(
-        """SELECT c.left_name, c.right_id, c.confidence, c.provenance,
-                  r.target_name, dr.document_id
-             FROM cross_domain_links c
-             JOIN relations r
-               ON r.source_name=c.right_id
-              AND r.relation='part_of'
-             LEFT JOIN document_relations dr
-               ON dr.source_name=r.source_name
-              AND dr.relation=r.relation
-              AND dr.target_name=r.target_name
-             WHERE c.left_type='Vocabulary'
-               AND c.right_kind='music_track'"""
-    ).fetchall()
+    try:
+        album_rows = db.execute(
+            """SELECT c.left_name, c.right_id, c.confidence, c.provenance,
+                      r.target_name, dr.document_id
+                 FROM cross_domain_links c
+                 JOIN relations r
+                   ON r.source_name=c.right_id
+                  AND r.relation='part_of'
+                 LEFT JOIN document_relations dr
+                   ON dr.source_name=r.source_name
+                  AND dr.relation=r.relation
+                  AND dr.target_name=r.target_name
+                 WHERE c.left_type='Vocabulary'
+                   AND c.right_kind='music_track'"""
+        ).fetchall()
+    except Exception as exc:
+        if "no such table" in str(exc):
+            album_rows = []
+        else:
+            raise
     for vocabulary_id, track_name, confidence, provenance, album_name, album_doc in album_rows:
         payload = json.loads(provenance)
         document_ids = list(payload.get("document_ids", []))
