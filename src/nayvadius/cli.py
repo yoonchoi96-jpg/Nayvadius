@@ -7,7 +7,7 @@ from .adapters import load_abraham_jsonl, load_abel, load_jacques_json
 def main() -> None:
     parser = argparse.ArgumentParser(prog="nayvadius")
     parser.add_argument("command", choices=["status", "process", "retry-failed", "qa"])
-    parser.add_argument("--input", default="data/input.jsonl")
+    parser.add_argument("--input", default="data/input.jsonl")\n    parser.add_argument("--db", default="data/nayvadius.db")
     parser.add_argument("--output", default="output")
     parser.add_argument("--source", choices=["jsonl", "abraham", "abel", "jacques"], default="abraham")
     parser.add_argument("--offset", type=int, default=0)
