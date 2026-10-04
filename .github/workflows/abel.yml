@@ -34,7 +34,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -e .
-      - name: Sync Abel vocabulary
+      - name: Sync Abel vocabulary in bounded batches
         env:
           INPUT_PATH: ${{ inputs.input_path || 'data/abel_export.csv' }}
           OFFSET: ${{ inputs.offset || '0' }}
@@ -44,7 +44,19 @@ jobs:
             echo "Abel input not present yet: $INPUT_PATH"
             exit 0
           fi
-          python -m nayvadius.cli process --source abel --input "$INPUT_PATH" --offset "$OFFSET" --limit "$LIMIT" --output output
+          if [ "$LIMIT" != "0" ]; then
+            python -m nayvadius.cli process --source abel --input "$INPUT_PATH" --offset "$OFFSET" --limit "$LIMIT" --output output
+          else
+            offset="$OFFSET"
+            while true; do
+              echo "Processing Abel batch offset=$offset limit=1000"
+              python -m nayvadius.cli process --source abel --input "$INPUT_PATH" --offset "$offset" --limit 1000 --output output
+              total=$(python -c 'import csv; p="'"$INPUT_PATH"'"; print(sum(1 for _ in csv.DictReader(open(p,encoding="utf-8-sig",newline=""))))' 2>/dev/null || wc -l < "$INPUT_PATH")
+              next=$((offset + 1000))
+              if [ "$next" -ge "$total" ]; then break; fi
+              offset="$next"
+            done
+          fi
       - name: Commit knowledge
         if: always()
         run: |
