@@ -150,14 +150,19 @@ def write_cross_domain_moc(db, root):
         else:
             raise
     if rows:
+        lines.append("## Entity Graph")
+        lines.append("")
         for source, relation, target, confidence, rule in rows:
             lines.append(f"- [[{source}]] — **{relation}** → [[{target}]] — {confidence:.3f} — `{rule}`")
     else:
-        lines.append("- No derived connections yet.")
+        lines.append("## Entity Graph")
+        lines.append("")
+        lines.append("- No derived entity connections yet.")
+
     lines += ["", "## Abraham ↔ Abel", ""]
     try:
         cross_rows = db.execute(
-            """SELECT c.left_name,c.left_type,c.right_id,c.confidence,c.rule,
+            """SELECT c.left_name,c.left_type,c.right_id,c.right_kind,c.confidence,c.rule,
                       v.word,v.pinyin
                  FROM cross_domain_links c
                  JOIN vocabularies v ON v.id=c.right_id
@@ -169,11 +174,44 @@ def write_cross_domain_moc(db, root):
             cross_rows = []
         else:
             raise
-    if cross_rows:
-        for name, etype, vid, confidence, rule, word, pinyin in cross_rows:
+    base_rows = [
+        row for row in cross_rows
+        if row[1] != "Vocabulary"
+    ]
+    if base_rows:
+        for name, etype, vid, _, confidence, rule, word, pinyin in base_rows:
             lines.append(f"- [[{name}]] ({etype}) ↔ [[{word}]] — {confidence:.3f} — `{rule}`")
     else:
         lines.append("- No deterministic entity↔vocabulary connections yet.")
+
+    lines += ["", "## Abraham ↔ Abel ↔ Jacques", ""]
+    try:
+        music_rows = db.execute(
+            """SELECT left_name,left_type,right_id,right_kind,confidence,rule,provenance
+                 FROM cross_domain_links
+                WHERE left_type='Vocabulary'
+                  AND right_kind IN ('music_track','music_album')
+                ORDER BY right_kind,right_id,left_name"""
+        ).fetchall()
+    except Exception as exc:
+        if "no such table" in str(exc):
+            music_rows = []
+        else:
+            raise
+    if music_rows:
+        for vocab_id, _, music_name, kind, confidence, rule, provenance in music_rows:
+            label = "Track" if kind == "music_track" else "Album"
+            try:
+                word_row = db.execute("SELECT word FROM vocabularies WHERE id=?", (vocab_id,)).fetchone()
+                word = word_row[0] if word_row else vocab_id
+            except Exception:
+                word = vocab_id
+            lines.append(
+                f"- [[{word}]] ↔ [[{music_name}]] ({label}) — "
+                f"{confidence:.3f} — `{rule}`"
+            )
+    else:
+        lines.append("- No deterministic three-way connections yet.")
 
     write_atomic(root / "_Cross-Domain Connections.md", "\n".join(lines) + "\n")
 
