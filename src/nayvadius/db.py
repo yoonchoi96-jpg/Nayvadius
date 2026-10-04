@@ -225,7 +225,15 @@ def merge_entity(canonical_name, duplicate_name, entity_type, reason="explicit")
   aliases=set(x.strip() for x in ((keep[0] if keep else "") or "").split(",") if x.strip()); aliases.update(x.strip() for x in (dup[0] or "").split(",") if x.strip()); aliases.discard(canonical_name); aliases.add(duplicate_name)
   confidence=max(float(keep[1]) if keep else 0.0,float(dup[1]))
   db.execute("INSERT INTO entities(name,entity_type,aliases,confidence) VALUES(?,?,?,?) ON CONFLICT(name,entity_type) DO UPDATE SET aliases=excluded.aliases,confidence=excluded.confidence",(canonical_name,entity_type,",".join(sorted(aliases,key=lambda x:(x.casefold(),x))),confidence))
-  db.execute("UPDATE document_entities SET entity_name=? WHERE entity_name=? AND entity_type=?",(canonical_name,duplicate_name,entity_type))
+  # Rewire document links collision-safely and preserve the stronger confidence.
+  doc_links=db.execute("SELECT document_id,confidence FROM document_entities WHERE entity_name=? AND entity_type=?",(duplicate_name,entity_type)).fetchall()
+  for document_id,confidence in doc_links:
+   existing=db.execute("SELECT confidence FROM document_entities WHERE document_id=? AND entity_name=? AND entity_type=?",(document_id,canonical_name,entity_type)).fetchone()
+   if existing:
+    db.execute("UPDATE document_entities SET confidence=MAX(confidence,?) WHERE document_id=? AND entity_name=? AND entity_type=?",(confidence,document_id,canonical_name,entity_type))
+   else:
+    db.execute("INSERT INTO document_entities(document_id,entity_name,entity_type,confidence) VALUES(?,?,?,?)",(document_id,canonical_name,entity_type,confidence))
+  db.execute("DELETE FROM document_entities WHERE entity_name=? AND entity_type=?",(duplicate_name,entity_type))
   rels=db.execute("SELECT source_name,relation,target_name,confidence FROM relations WHERE source_name=? OR target_name=?",(duplicate_name,duplicate_name)).fetchall(); db.execute("DELETE FROM relations WHERE source_name=? OR target_name=?",(duplicate_name,duplicate_name))
   for source,relation,target,conf in rels:
    source=canonical_name if source==duplicate_name else source; target=canonical_name if target==duplicate_name else target
