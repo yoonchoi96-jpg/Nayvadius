@@ -123,3 +123,24 @@ The resulting vocabulary notes are written to `output/vocabulary/`, while canoni
 Abraham answers **what should become knowledge**. Abel supplies **language/vocabulary evidence**. Nayvadius answers **how those records connect to the same canonical knowledge graph**.
 
 Neither source is allowed to silently overwrite the other source's provenance.
+
+## Canonical entity ontology
+
+The canonical entity domains are:
+
+- People
+- Organizations
+- Countries
+- Places
+- Products
+- Technologies
+- Concepts
+- Events
+- Institutions
+- MusicTracks
+- MusicAlbums
+
+Companies and brands are intentionally unified under **Organizations**. Their distinction is represented through explicit relations such as `brand_of`, `owns`, `operates`, `subsidiary_of`, `parent_of`, `acquired`, and `acquired_by`.
+
+Entity merges are conservative: they stay within the same canonical type and require an explicit or evidence-backed merge reason. Merge decisions are retained in the entity merge audit log.
+
