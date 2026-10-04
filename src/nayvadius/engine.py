@@ -1,7 +1,7 @@
 from .io import load_jsonl
 from .processor import process_document, parse_llm
 from .store import upsert_document, save_result, result_is_current
-from .db import cache_get, cache_put, connect, status, prune_orphan_entities
+from .db import cache_get, cache_put, connect, status, prune_orphan_entities, record_failure, clear_failure
 from .providers import LLMProvider
 from .writer import write_markdown, write_entities, write_entities_from_db, write_entity_moc
 from .graph import write_graph
@@ -31,17 +31,21 @@ class Engine:
         doc = result.document
         try:
             if stats.get("force_refresh", False) and result_is_current(result):
+                clear_failure(doc.id)
                 stats["skipped"] += 1
                 return
             if not upsert_document(doc, force=stats.get("force_refresh", False)):
+                clear_failure(doc.id)
                 stats["skipped"] += 1
                 return
             save_result(result)
             write_markdown(result, self.output)
             write_entities(result.entities, self.output)
+            clear_failure(doc.id)
             stats["processed"] += 1
         except Exception as exc:
             stats["errors"] += 1
+            record_failure(doc.id, exc)
             with connect() as db:
                 db.execute("UPDATE documents SET status='error' WHERE id=?", (doc.id,))
             print("ERROR", doc.id, exc)
@@ -76,6 +80,7 @@ class Engine:
                 self._persist(result, stats)
             except Exception as exc:
                 stats["errors"] += 1
+                record_failure(doc.id, exc)
                 print("ERROR", doc.id, exc)
 
         return self._finish(stats)
