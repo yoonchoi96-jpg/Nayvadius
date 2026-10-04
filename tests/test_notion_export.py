@@ -1,0 +1,26 @@
+import json
+from pathlib import Path
+
+from nayvadius.db import connect
+from nayvadius.notion_export import write_notion_manifest
+
+
+def test_notion_manifest_is_deterministic_and_keeps_provenance(tmp_path: Path):
+    db = connect(tmp_path / "state.db")
+    db.execute("INSERT INTO entities VALUES(?,?,?,?)", ("Taylor Swift", "People", "Taylor", 0.95))
+    db.execute(
+        "INSERT INTO documents(id,title,content_hash,source,status) VALUES(?,?,?,?,?)",
+        ("doc-1", "Music note", "hash", "abraham", "done"),
+    )
+    db.execute(
+        "INSERT INTO entity_sources(entity_name,entity_type,source,document_id) VALUES(?,?,?,?)",
+        ("Taylor Swift", "People", "abraham", "doc-1"),
+    )
+    db.commit()
+    first = write_notion_manifest(db, tmp_path)
+    payload1 = json.loads(Path(first).read_text())
+    second = write_notion_manifest(db, tmp_path)
+    payload2 = json.loads(Path(second).read_text())
+    assert payload1 == payload2
+    assert payload1["entities"][0]["id"] == payload2["entities"][0]["id"]
+    assert payload1["entities"][0]["provenance"] == [{"source": "abraham", "document_id": "doc-1"}]
