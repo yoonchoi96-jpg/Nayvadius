@@ -41,10 +41,14 @@ def write_graph(db, root):
 
     by_name = _canonical_id(rows, db)
     evidence_map = {}
-    for source_name, relation, target_name, evidence_id, status in db.execute(
-        "SELECT source_name,relation,target_name,evidence_document_id,status "
-        "FROM relation_evidence"
-    ):
+    try:
+        evidence_rows = db.execute("SELECT source_name,relation,target_name,evidence_document_id,status FROM relation_evidence")
+    except Exception as exc:
+        if "no such table" in str(exc):
+            evidence_rows = []
+        else:
+            raise
+    for source_name, relation, target_name, evidence_id, status in evidence_rows:
         evidence_map.setdefault((source_name, relation, target_name), []).append({
             "document_id": evidence_id,
             "status": status,
