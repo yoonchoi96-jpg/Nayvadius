@@ -109,6 +109,8 @@ def derive_cross_domain_links(db=None):
     )
     db.execute("DELETE FROM cross_domain_links")
 
+    link_count = 0
+
     # Base: entity <-> vocabulary co-occurrence in an Abraham document.
     rows = db.execute(
         """SELECT de.entity_name, de.entity_type, dv.vocabulary_id,
@@ -129,6 +131,7 @@ def derive_cross_domain_links(db=None):
              "same_abraham_document",
              json.dumps({"document_ids": [document_id]}, ensure_ascii=False)),
         )
+        link_count += 1
 
     # Three-way bridge:
     # Abraham entity + Abel vocabulary + the same canonical entity in Jacques.
@@ -184,6 +187,7 @@ def derive_cross_domain_links(db=None):
                  },
              }, ensure_ascii=False)),
         )
+        link_count += 1
 
         # Vocabulary -> track is a separate derived edge so the three-way
         # connection is directly navigable without losing the shared-entity path.
@@ -200,6 +204,7 @@ def derive_cross_domain_links(db=None):
                  "vocabulary_id": vocabulary_id,
              }, ensure_ascii=False)),
         )
+        link_count += 1
 
     # Extend the same deterministic bridge from track to album.
     album_rows = db.execute(
@@ -237,8 +242,9 @@ def derive_cross_domain_links(db=None):
                  },
              }, ensure_ascii=False)),
         )
+        link_count += 1
 
     if own:
         db.commit()
         db.close()
-    return len(rows) + len(bridge_rows)
+    return link_count
