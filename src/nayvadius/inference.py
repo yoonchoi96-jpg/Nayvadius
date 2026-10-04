@@ -1,4 +1,4 @@
-from .db import connect
+import json\nfrom .db import connect
 
 
 def derive_relation_chains(db=None):
@@ -35,7 +35,7 @@ def derive_relation_chains(db=None):
     count = 0
     for artist, track, c1, album, c2 in rows:
         confidence = round(min(float(c1), float(c2)) * 0.95, 6)
-        provenance = str([{
+        provenance = json.dumps([{
             "source": artist,
             "relation": "performed",
             "target": track,
