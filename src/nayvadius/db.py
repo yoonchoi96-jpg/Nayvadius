@@ -49,6 +49,31 @@ def prune_orphan_entities():
    db.execute("DELETE FROM entity_aliases WHERE canonical_name=? AND entity_type=?",(name,entity_type)); db.execute("DELETE FROM entities WHERE name=? AND entity_type=?",(name,entity_type))
   return len(rows)
 
+def merge_vocabulary(canonical_id, duplicate_id):
+    if canonical_id == duplicate_id:
+        return False
+    with connect() as db:
+        keep=db.execute("SELECT word,traditional,pinyin,pos,meaning_ko,hsk_levels,wordbooks,metadata FROM vocabularies WHERE id=?",(canonical_id,)).fetchone()
+        dup=db.execute("SELECT word,traditional,pinyin,pos,meaning_ko,hsk_levels,wordbooks,metadata FROM vocabularies WHERE id=?",(duplicate_id,)).fetchone()
+        if not dup:
+            return False
+        if keep:
+            levels=set((keep[5] or "").split("|")) | set((dup[5] or "").split("|"))
+            books=set((keep[6] or "").split("|")) | set((dup[6] or "").split("|"))
+            meta=json.loads(keep[7] or "{}"); meta.update(json.loads(dup[7] or "{}"))
+            db.execute("UPDATE vocabularies SET traditional=?,pinyin=?,pos=?,meaning_ko=?,hsk_levels=?,wordbooks=?,metadata=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                       (keep[1] or dup[1],keep[2] or dup[2],keep[3] or dup[3],keep[4] or dup[4],
+                        "|".join(sorted(x for x in levels if x)), "|".join(sorted(x for x in books if x)),
+                        json.dumps(meta,ensure_ascii=False),canonical_id))
+            db.execute("UPDATE entity_vocabulary_links SET vocabulary_id=? WHERE vocabulary_id=?",(canonical_id,duplicate_id))
+            db.execute("UPDATE document_vocabulary_links SET vocabulary_id=? WHERE vocabulary_id=?",(canonical_id,duplicate_id))
+            db.execute("UPDATE vocabulary_sources SET vocabulary_id=? WHERE vocabulary_id=?",(canonical_id,duplicate_id))
+            db.execute("DELETE FROM vocabularies WHERE id=?",(duplicate_id,))
+        else:
+            db.execute("UPDATE vocabularies SET id=? WHERE id=?",(canonical_id,duplicate_id))
+        db.execute("UPDATE vocabulary_aliases SET canonical_id=? WHERE canonical_id=?",(canonical_id,duplicate_id))
+        return True
+
 def save_vocabulary(vocabulary, entity_links=()):
     """Persist one Abel vocabulary record and its current entity links."""
     with connect() as db:
