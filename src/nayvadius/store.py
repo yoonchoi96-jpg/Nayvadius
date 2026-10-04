@@ -71,46 +71,45 @@ def link_vocabulary(vocabulary, explicit_entities=()):
     source_id = vocabulary.id
     source_name = vocabulary.source
     source_metadata = dict(vocabulary.metadata)
+    alias_candidates = [_norm_alias(vocabulary.id), _norm_alias(vocabulary.word), _norm_alias(vocabulary.traditional)]
     with connect() as db:
-        alias_candidates = [_norm_alias(vocabulary.id), _norm_alias(vocabulary.word), _norm_alias(vocabulary.traditional)]
-        canonical_id = next((db.execute("SELECT canonical_id FROM vocabulary_aliases WHERE alias=?", (a,)).fetchone()[0]
-                             for a in alias_candidates if a and db.execute("SELECT canonical_id FROM vocabulary_aliases WHERE alias=?", (a,)).fetchone()), vocabulary.id)
+        canonical_id = vocabulary.id
+        for alias in alias_candidates:
+            if not alias:
+                continue
+            row = db.execute("SELECT canonical_id FROM vocabulary_aliases WHERE alias=?", (alias,)).fetchone()
+            if row:
+                canonical_id = row[0]
+                break
         existing = db.execute("SELECT word,traditional,pinyin,pos,meaning_ko,hsk_levels,wordbooks,source,metadata FROM vocabularies WHERE id=?", (canonical_id,)).fetchone()
         if existing and canonical_id != vocabulary.id:
-            old_levels=set(filter(None,(existing[5] or "").split("|"))); old_levels.update(vocabulary.hsk_levels)
-            old_books=set(filter(None,(existing[6] or "").split("|"))); old_books.update(vocabulary.wordbooks)
-            old_meta=json.loads(existing[8] or "{}"); new_meta=dict(old_meta); new_meta.update(vocabulary.metadata)
+            levels = set(filter(None, (existing[5] or "").split("|"))) | set(vocabulary.hsk_levels)
+            books = set(filter(None, (existing[6] or "").split("|"))) | set(vocabulary.wordbooks)
+            meta = json.loads(existing[8] or "{}")
+            meta.update(vocabulary.metadata)
             from .models import Vocabulary as V
-            vocabulary=V(canonical_id, existing[0] or vocabulary.word, existing[1] or vocabulary.traditional,
-                         vocabulary.pinyin or existing[2] or "", vocabulary.pos or existing[3] or "",
-                         vocabulary.meaning_ko or existing[4] or "", tuple(sorted(old_levels)),
-                         tuple(sorted(old_books)), existing[7] or vocabulary.source, new_meta)
+            vocabulary = V(canonical_id, existing[0] or vocabulary.word, existing[1] or vocabulary.traditional,
+                           vocabulary.pinyin or existing[2] or "", vocabulary.pos or existing[3] or "",
+                           vocabulary.meaning_ko or existing[4] or "", tuple(sorted(levels)),
+                           tuple(sorted(books)), existing[7] or vocabulary.source, meta)
         explicit = {_norm_alias(x) for x in explicit_entities if _norm_alias(x)}
         forms = {_norm_alias(vocabulary.word), _norm_alias(vocabulary.traditional)} - {""}
         links=[]; seen=set()
         for value in explicit:
             for name, entity_type in db.execute("SELECT canonical_name,entity_type FROM entity_aliases WHERE alias=?", (value,)):
                 key=(name,entity_type)
-                if key not in seen: links.append((name,entity_type,"explicit",1.0)); seen.add(key)
+                if key not in seen:
+                    links.append((name,entity_type,"explicit",1.0)); seen.add(key)
         for form in forms:
             for name, entity_type in db.execute("SELECT name,entity_type FROM entities WHERE lower(name)=?", (form,)):
                 key=(name,entity_type)
-                if key not in seen: links.append((name,entity_type,"exact",1.0)); seen.add(key)
-        save_vocabulary(vocabulary, links)
-        # Merge existing records that share the same normalized headword.
-        with connect() as db:
-            rows = []
-            for value in (vocabulary.word, vocabulary.traditional):
-                alias = _norm_alias(value)
-                if alias:
-                    rows.extend(db.execute("SELECT canonical_id FROM vocabulary_aliases WHERE alias=?", (alias,)).fetchall())
-        for (other_id,) in dict.fromkeys(rows):
-            if other_id != vocabulary.id:
-                merge_vocabulary(vocabulary.id, other_id)
-        for alias in [vocabulary.id, vocabulary.word, vocabulary.traditional]:
-            save_vocabulary_alias(alias, vocabulary.id)
-        save_vocabulary_source(vocabulary.id, source_id, source_name, source_metadata)
-        return links
+                if key not in seen:
+                    links.append((name,entity_type,"exact",1.0)); seen.add(key)
+    save_vocabulary(vocabulary, links)
+    for alias in [source_id, vocabulary.word, vocabulary.traditional]:
+        save_vocabulary_alias(alias, vocabulary.id)
+    save_vocabulary_source(vocabulary.id, source_id, source_name, source_metadata)
+    return links
 
 def link_document_to_vocabularies(document_id, content, explicit_ids=(), vocabulary_index=None):
     text = _norm_alias(content)
