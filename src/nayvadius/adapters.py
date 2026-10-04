@@ -196,8 +196,8 @@ def parse_jacques_track(raw: dict) -> ProcessedDocument:
     for artist in artists:
         entities.append(Entity(artist, "People", 1.0, ()))
     if album:
-        entities.append(Entity(album, "Products", 1.0, ()))
-    entities.append(Entity(title, "Products", 1.0, ()))
+        entities.append(Entity(album, "MusicAlbums", 1.0, ()))
+    entities.append(Entity(title, "MusicTracks", 1.0, ()))
     relations = [Relation(artist, "performed", title, 1.0) for artist in artists]
     if album:
         relations.append(Relation(title, "part_of", album, 1.0))
