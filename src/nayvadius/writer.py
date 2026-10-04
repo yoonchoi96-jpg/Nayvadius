@@ -38,6 +38,11 @@ def write_entities_from_db(db, root):
         alias_lines = "\n".join("- " + x for x in values) or "- None"
         provenance = list(db.execute("SELECT source,document_id FROM entity_sources WHERE entity_name=? AND entity_type=? ORDER BY source,document_id", (name, entity_type)))
         provenance_lines = "\n".join(f"- {source}: [[{doc_id}]]" for source, doc_id in provenance) or "- None"
+        music_hint = ""
+        if entity_type == "MusicTracks":
+            music_hint = "\n## Music\n- Track entity from Jacques.\n"
+        elif entity_type == "MusicAlbums":
+            music_hint = "\n## Music\n- Album entity from Jacques.\n"
         text = (
             "---\n"
             "name: " + yaml_scalar(name) + "\n"
@@ -56,6 +61,7 @@ def write_entities_from_db(db, root):
             + "\\n\\n"
             "## Mentioned in\n"
             "- Entity backlinks are generated from the canonical database.\n"
+            + music_hint
         )
         write_atomic(out, text)
 
