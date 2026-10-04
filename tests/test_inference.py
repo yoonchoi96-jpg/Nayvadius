@@ -65,3 +65,29 @@ def test_derived_music_chain_rebuilds_without_stale_rows(tmp_path: Path):
     db.commit()
     assert derive_relation_chains(db) == 0
     assert db.execute("SELECT COUNT(*) FROM derived_relations").fetchone()[0] == 0
+
+
+def test_cross_domain_link_is_provenance_preserving(tmp_path: Path):
+    db = sqlite3.connect(tmp_path / "x.db")
+    db.executescript("""
+    CREATE TABLE documents(id TEXT PRIMARY KEY, source TEXT);
+    CREATE TABLE document_entities(document_id TEXT, entity_name TEXT, entity_type TEXT, confidence REAL);
+    CREATE TABLE document_vocabulary_links(document_id TEXT, vocabulary_id TEXT, match_type TEXT, confidence REAL);
+    CREATE TABLE vocabularies(id TEXT PRIMARY KEY, word TEXT, pinyin TEXT);
+    """)
+    db.execute("INSERT INTO documents VALUES('doc-1','abraham')")
+    db.execute("INSERT INTO document_entities VALUES('doc-1','Taylor Swift','People',1.0)")
+    db.execute("INSERT INTO vocabularies VALUES('v1','音乐','yīnyuè')")
+    db.execute("INSERT INTO document_vocabulary_links VALUES('doc-1','v1','exact',0.9)")
+    db.commit()
+
+    from nayvadius.inference import derive_cross_domain_links
+    assert derive_cross_domain_links(db) == 1
+    row = db.execute(
+        "SELECT left_name,left_type,right_id,confidence,rule,provenance "
+        "FROM cross_domain_links"
+    ).fetchone()
+    assert row[:3] == ("Taylor Swift", "People", "v1")
+    assert row[3] == 0.81
+    assert row[4] == "same_abraham_document"
+    assert json.loads(row[5])["document_ids"] == ["doc-1"]
