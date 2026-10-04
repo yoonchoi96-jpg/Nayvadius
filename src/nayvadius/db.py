@@ -217,42 +217,174 @@ def merge_entity(canonical_name, duplicate_name, entity_type, reason="explicit")
         return False
     if reason not in ("explicit", "exact_name", "explicit_alias", "provenance_alias"):
         raise ValueError("invalid entity merge reason: " + str(reason))
- with connect() as db:
-  if canonical_name==duplicate_name: return False
-  keep=db.execute("SELECT aliases,confidence FROM entities WHERE name=? AND entity_type=?",(canonical_name,entity_type)).fetchone()
-  dup=db.execute("SELECT aliases,confidence FROM entities WHERE name=? AND entity_type=?",(duplicate_name,entity_type)).fetchone()
-  if not dup: return False
-  aliases=set(x.strip() for x in ((keep[0] if keep else "") or "").split(",") if x.strip()); aliases.update(x.strip() for x in (dup[0] or "").split(",") if x.strip()); aliases.discard(canonical_name); aliases.add(duplicate_name)
-  confidence=max(float(keep[1]) if keep else 0.0,float(dup[1]))
-  db.execute("INSERT INTO entities(name,entity_type,aliases,confidence) VALUES(?,?,?,?) ON CONFLICT(name,entity_type) DO UPDATE SET aliases=excluded.aliases,confidence=excluded.confidence",(canonical_name,entity_type,",".join(sorted(aliases,key=lambda x:(x.casefold(),x))),confidence))
-  # Rewire document links collision-safely and preserve the stronger confidence.
-  doc_links=db.execute("SELECT document_id,confidence FROM document_entities WHERE entity_name=? AND entity_type=?",(duplicate_name,entity_type)).fetchall()
-  for document_id,confidence in doc_links:
-   existing=db.execute("SELECT confidence FROM document_entities WHERE document_id=? AND entity_name=? AND entity_type=?",(document_id,canonical_name,entity_type)).fetchone()
-   if existing:
-    db.execute("UPDATE document_entities SET confidence=MAX(confidence,?) WHERE document_id=? AND entity_name=? AND entity_type=?",(confidence,document_id,canonical_name,entity_type))
-   else:
-    db.execute("INSERT INTO document_entities(document_id,entity_name,entity_type,confidence) VALUES(?,?,?,?)",(document_id,canonical_name,entity_type,confidence))
-  db.execute("DELETE FROM document_entities WHERE entity_name=? AND entity_type=?",(duplicate_name,entity_type))
-  rels=db.execute("SELECT source_name,relation,target_name,confidence FROM relations WHERE source_name=? OR target_name=?",(duplicate_name,duplicate_name)).fetchall(); db.execute("DELETE FROM relations WHERE source_name=? OR target_name=?",(duplicate_name,duplicate_name))
-  for source,relation,target,conf in rels:
-   source=canonical_name if source==duplicate_name else source; target=canonical_name if target==duplicate_name else target
-   existing=db.execute("SELECT confidence FROM relations WHERE source_name=? AND relation=? AND target_name=?",(source,relation,target)).fetchone()
-   if existing: db.execute("UPDATE relations SET confidence=MAX(confidence,?) WHERE source_name=? AND relation=? AND target_name=?",(conf,source,relation,target))
-   else: db.execute("INSERT INTO relations VALUES(?,?,?,?)",(source,relation,target,conf))
-  doc_rels=db.execute("SELECT document_id,source_name,relation,target_name,confidence FROM document_relations WHERE source_name=? OR target_name=?",(duplicate_name,duplicate_name)).fetchall(); db.execute("DELETE FROM document_relations WHERE source_name=? OR target_name=?",(duplicate_name,duplicate_name))
-  for document_id,source,relation,target,conf in doc_rels:
-   source=canonical_name if source==duplicate_name else source; target=canonical_name if target==duplicate_name else target
-   existing=db.execute("SELECT confidence FROM document_relations WHERE document_id=? AND source_name=? AND relation=? AND target_name=?",(document_id,source,relation,target)).fetchone()
-   if existing: db.execute("UPDATE document_relations SET confidence=MAX(confidence,?) WHERE document_id=? AND source_name=? AND relation=? AND target_name=?",(conf,document_id,source,relation,target))
-   else: db.execute("INSERT INTO document_relations VALUES(?,?,?,?,?)",(document_id,source,relation,target,conf))
-  evidence=db.execute("SELECT document_id,source_name,relation,target_name,evidence_document_id,status,checked_at FROM relation_evidence WHERE source_name=? OR target_name=?",(duplicate_name,duplicate_name)).fetchall(); db.execute("DELETE FROM relation_evidence WHERE source_name=? OR target_name=?",(duplicate_name,duplicate_name))
-  for document_id,source,relation,target,evidence_document_id,status,checked_at in evidence:
-   source=canonical_name if source==duplicate_name else source; target=canonical_name if target==duplicate_name else target
-   db.execute("INSERT OR REPLACE INTO relation_evidence(document_id,source_name,relation,target_name,evidence_document_id,status,checked_at) VALUES(?,?,?,?,?,?,?)",(document_id,source,relation,target,evidence_document_id,status,checked_at))
-  db.execute("UPDATE OR IGNORE entity_sources SET entity_name=? WHERE entity_name=? AND entity_type=?",(canonical_name,duplicate_name,entity_type))
-  db.execute("DELETE FROM entity_sources WHERE entity_name=? AND entity_type=?",(duplicate_name,entity_type))
-  db.execute("DELETE FROM entity_aliases WHERE canonical_name=? AND entity_type=?",(duplicate_name,entity_type))
-  for alias in aliases: db.execute("INSERT OR IGNORE INTO entity_aliases(alias,canonical_name,entity_type) VALUES(?,?,?)",(alias.casefold(),canonical_name,entity_type))
-  db.execute("INSERT INTO entity_merge_log(canonical_name,duplicate_name,entity_type,reason) VALUES(?,?,?,?)",(canonical_name,duplicate_name,entity_type,reason))
-  db.execute("DELETE FROM entities WHERE name=? AND entity_type=?",(duplicate_name,entity_type)); return True
+
+    with connect() as db:
+        keep = db.execute(
+            "SELECT aliases,confidence FROM entities WHERE name=? AND entity_type=?",
+            (canonical_name, entity_type),
+        ).fetchone()
+        dup = db.execute(
+            "SELECT aliases,confidence FROM entities WHERE name=? AND entity_type=?",
+            (duplicate_name, entity_type),
+        ).fetchone()
+        if not dup:
+            return False
+
+        aliases = {
+            x.strip() for x in ((keep[0] if keep else "") or "").split(",") if x.strip()
+        }
+        aliases.update(x.strip() for x in (dup[0] or "").split(",") if x.strip())
+        aliases.discard(canonical_name)
+        aliases.add(duplicate_name)
+        confidence = max(
+            float(keep[1]) if keep else 0.0,
+            float(dup[1]),
+        )
+        db.execute(
+            """INSERT INTO entities(name,entity_type,aliases,confidence)
+               VALUES(?,?,?,?)
+               ON CONFLICT(name,entity_type) DO UPDATE SET
+               aliases=excluded.aliases,confidence=excluded.confidence""",
+            (
+                canonical_name,
+                entity_type,
+                ",".join(sorted(aliases, key=lambda x: (x.casefold(), x))),
+                confidence,
+            ),
+        )
+
+        # Rewire document links collision-safely and preserve the stronger confidence.
+        doc_links = db.execute(
+            "SELECT document_id,confidence FROM document_entities "
+            "WHERE entity_name=? AND entity_type=?",
+            (duplicate_name, entity_type),
+        ).fetchall()
+        for document_id, link_confidence in doc_links:
+            existing = db.execute(
+                "SELECT confidence FROM document_entities "
+                "WHERE document_id=? AND entity_name=? AND entity_type=?",
+                (document_id, canonical_name, entity_type),
+            ).fetchone()
+            if existing:
+                db.execute(
+                    "UPDATE document_entities SET confidence=MAX(confidence,?) "
+                    "WHERE document_id=? AND entity_name=? AND entity_type=?",
+                    (link_confidence, document_id, canonical_name, entity_type),
+                )
+            else:
+                db.execute(
+                    "INSERT INTO document_entities(document_id,entity_name,entity_type,confidence) "
+                    "VALUES(?,?,?,?)",
+                    (document_id, canonical_name, entity_type, link_confidence),
+                )
+        db.execute(
+            "DELETE FROM document_entities WHERE entity_name=? AND entity_type=?",
+            (duplicate_name, entity_type),
+        )
+
+        rels = db.execute(
+            "SELECT source_name,relation,target_name,confidence FROM relations "
+            "WHERE source_name=? OR target_name=?",
+            (duplicate_name, duplicate_name),
+        ).fetchall()
+        db.execute(
+            "DELETE FROM relations WHERE source_name=? OR target_name=?",
+            (duplicate_name, duplicate_name),
+        )
+        for source, relation, target, rel_confidence in rels:
+            source = canonical_name if source == duplicate_name else source
+            target = canonical_name if target == duplicate_name else target
+            existing = db.execute(
+                "SELECT confidence FROM relations "
+                "WHERE source_name=? AND relation=? AND target_name=?",
+                (source, relation, target),
+            ).fetchone()
+            if existing:
+                db.execute(
+                    "UPDATE relations SET confidence=MAX(confidence,?) "
+                    "WHERE source_name=? AND relation=? AND target_name=?",
+                    (rel_confidence, source, relation, target),
+                )
+            else:
+                db.execute(
+                    "INSERT INTO relations VALUES(?,?,?,?)",
+                    (source, relation, target, rel_confidence),
+                )
+
+        doc_rels = db.execute(
+            "SELECT document_id,source_name,relation,target_name,confidence "
+            "FROM document_relations WHERE source_name=? OR target_name=?",
+            (duplicate_name, duplicate_name),
+        ).fetchall()
+        db.execute(
+            "DELETE FROM document_relations WHERE source_name=? OR target_name=?",
+            (duplicate_name, duplicate_name),
+        )
+        for document_id, source, relation, target, rel_confidence in doc_rels:
+            source = canonical_name if source == duplicate_name else source
+            target = canonical_name if target == duplicate_name else target
+            existing = db.execute(
+                "SELECT confidence FROM document_relations "
+                "WHERE document_id=? AND source_name=? AND relation=? AND target_name=?",
+                (document_id, source, relation, target),
+            ).fetchone()
+            if existing:
+                db.execute(
+                    "UPDATE document_relations SET confidence=MAX(confidence,?) "
+                    "WHERE document_id=? AND source_name=? AND relation=? AND target_name=?",
+                    (rel_confidence, document_id, source, relation, target),
+                )
+            else:
+                db.execute(
+                    "INSERT INTO document_relations VALUES(?,?,?,?,?)",
+                    (document_id, source, relation, target, rel_confidence),
+                )
+
+        evidence_rows = db.execute(
+            "SELECT document_id,source_name,relation,target_name,evidence_document_id,status,checked_at "
+            "FROM relation_evidence WHERE source_name=? OR target_name=?",
+            (duplicate_name, duplicate_name),
+        ).fetchall()
+        db.execute(
+            "DELETE FROM relation_evidence WHERE source_name=? OR target_name=?",
+            (duplicate_name, duplicate_name),
+        )
+        for document_id, source, relation, target, evidence_document_id, ev_status, checked_at in evidence_rows:
+            source = canonical_name if source == duplicate_name else source
+            target = canonical_name if target == duplicate_name else target
+            db.execute(
+                "INSERT OR REPLACE INTO relation_evidence("
+                "document_id,source_name,relation,target_name,evidence_document_id,status,checked_at"
+                ") VALUES(?,?,?,?,?,?,?)",
+                (document_id, source, relation, target, evidence_document_id, ev_status, checked_at),
+            )
+
+        db.execute(
+            "UPDATE OR IGNORE entity_sources SET entity_name=? "
+            "WHERE entity_name=? AND entity_type=?",
+            (canonical_name, duplicate_name, entity_type),
+        )
+        db.execute(
+            "DELETE FROM entity_sources WHERE entity_name=? AND entity_type=?",
+            (duplicate_name, entity_type),
+        )
+        db.execute(
+            "DELETE FROM entity_aliases WHERE canonical_name=? AND entity_type=?",
+            (duplicate_name, entity_type),
+        )
+        for alias in aliases:
+            db.execute(
+                "INSERT OR IGNORE INTO entity_aliases(alias,canonical_name,entity_type) "
+                "VALUES(?,?,?)",
+                (alias.casefold(), canonical_name, entity_type),
+            )
+        db.execute(
+            "INSERT INTO entity_merge_log(canonical_name,duplicate_name,entity_type,reason) "
+            "VALUES(?,?,?,?)",
+            (canonical_name, duplicate_name, entity_type, reason),
+        )
+        db.execute(
+            "DELETE FROM entities WHERE name=? AND entity_type=?",
+            (duplicate_name, entity_type),
+        )
+        return True
