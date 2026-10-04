@@ -1,4 +1,5 @@
 from pathlib import Path
+from .db import connect
 def _document_vocabulary_lines(db, document_id):
  rows=db.execute("SELECT v.word,v.pinyin FROM document_vocabulary_links l JOIN vocabularies v ON v.id=l.vocabulary_id WHERE l.document_id=? ORDER BY v.word",(document_id,)).fetchall()
  return "\n".join(f"- [[{word}]] — {pinyin or '-'}" for word,pinyin in rows) or "- None"
@@ -93,7 +94,10 @@ def write_vocabulary_from_db(db, root):
             "---\n\n"
             "# " + word + "\n\n"
             "## Meaning\n" + (meaning_ko or "- None") + "\n\n"
-            "## Linked entities\n" + entity_lines + "\n"
+            "## Linked entities\n" + entity_lines + "\n\n"
+            "## Mentioned in\n"
+            + (("\n".join("- [[" + title + "]]" for title, in db.execute("SELECT d.title FROM document_vocabulary_links l JOIN documents d ON d.id=l.document_id WHERE l.vocabulary_id=? ORDER BY d.title", (vid,)).fetchall())) or "- None")
+            + "\n"
         )
         write_atomic(out, text)
 
