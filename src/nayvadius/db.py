@@ -6,7 +6,68 @@ SCHEMA="""CREATE TABLE IF NOT EXISTS documents(id TEXT PRIMARY KEY,title TEXT NO
 
 def connect(path=None):
  p=Path(path or settings.state_path); p.parent.mkdir(parents=True,exist_ok=True); c=sqlite3.connect(p,timeout=30); c.execute("PRAGMA journal_mode=WAL"); c.execute("PRAGMA busy_timeout=30000"); c.execute("PRAGMA foreign_keys=ON"); c.executescript(SCHEMA)
+ _migrate_entity_types(c)
  return c
+
+
+def _migrate_entity_types(db):
+    """Migrate legacy Companies/Brands into canonical Organizations."""
+    rows = db.execute("SELECT name,entity_type,aliases,confidence FROM entities").fetchall()
+    for name, entity_type, aliases, confidence in [r for r in rows if r[1] in ("Companies", "Brands")]:
+        existing = db.execute(
+            "SELECT aliases,confidence FROM entities WHERE name=? AND entity_type='Organizations'",
+            (name,),
+        ).fetchone()
+        old_aliases = [x.strip() for x in (aliases or "").split(",") if x.strip()]
+        if existing:
+            merged = set(x.strip() for x in (existing[0] or "").split(",") if x.strip())
+            merged.update(old_aliases)
+            db.execute(
+                "UPDATE entities SET aliases=?,confidence=? WHERE name=? AND entity_type='Organizations'",
+                (",".join(sorted(merged, key=lambda x: (x.casefold(), x))),
+                 max(float(existing[1]), float(confidence)), name),
+            )
+        else:
+            db.execute(
+                "INSERT INTO entities(name,entity_type,aliases,confidence) VALUES(?,?,?,?)",
+                (name, "Organizations", aliases or "", confidence),
+            )
+        db.execute(
+            "UPDATE OR IGNORE document_entities SET entity_type='Organizations' WHERE entity_name=? AND entity_type=?",
+            (name, entity_type),
+        )
+        db.execute("DELETE FROM document_entities WHERE entity_name=? AND entity_type=?", (name, entity_type))
+        db.execute(
+            "UPDATE OR IGNORE entity_sources SET entity_type='Organizations' WHERE entity_name=? AND entity_type=?",
+            (name, entity_type),
+        )
+        db.execute("DELETE FROM entity_sources WHERE entity_name=? AND entity_type=?", (name, entity_type))
+        db.execute(
+            "UPDATE entity_aliases SET entity_type='Organizations',canonical_name=? WHERE canonical_name=? AND entity_type=?",
+            (name, name, entity_type),
+        )
+        db.execute("DELETE FROM entities WHERE name=? AND entity_type=?", (name, entity_type))
+
+    info = db.execute("PRAGMA table_info(entity_aliases)").fetchall()
+    pk_columns = [row[1] for row in info if row[5]]
+    if pk_columns == ["alias"]:
+        db.execute("ALTER TABLE entity_aliases RENAME TO entity_aliases_legacy")
+        db.execute(
+            "CREATE TABLE entity_aliases("
+            "alias TEXT NOT NULL,canonical_name TEXT NOT NULL,entity_type TEXT NOT NULL,"
+            "PRIMARY KEY(alias,entity_type))"
+        )
+        db.execute(
+            "INSERT OR REPLACE INTO entity_aliases(alias,canonical_name,entity_type) "
+            "SELECT alias,canonical_name,"
+            "CASE WHEN entity_type IN ('Companies','Brands') THEN 'Organizations' ELSE entity_type END "
+            "FROM entity_aliases_legacy"
+        )
+        db.execute("DROP TABLE entity_aliases_legacy")
+    else:
+        db.execute(
+            "UPDATE entity_aliases SET entity_type='Organizations' WHERE entity_type IN ('Companies','Brands')"
+        )
 
 def cache_get(key):
  with connect() as c:
