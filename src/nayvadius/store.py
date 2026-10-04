@@ -199,12 +199,19 @@ def save_result(result):
             "SELECT entity_name,entity_type FROM document_entities WHERE document_id=?",
             (result.document.id,),
         ).fetchall()
+        old_sources = db.execute(
+            "SELECT entity_name,entity_type,source,document_id FROM entity_sources WHERE document_id=?",
+            (result.document.id,),
+        ).fetchall()
         db.execute("DELETE FROM document_entities WHERE document_id=?", (result.document.id,))
         db.execute("DELETE FROM document_relations WHERE document_id=?", (result.document.id,))
-        for entity_name, entity_type in old_entities:
+        # Delete provenance by the document itself, not the incoming source.
+        # A reprocessed document may legitimately change source metadata; old
+        # source rows must not survive and create false cross-source bridges.
+        for entity_name, entity_type, source, document_id in old_sources:
             db.execute(
                 "DELETE FROM entity_sources WHERE entity_name=? AND entity_type=? AND source=? AND document_id=?",
-                (entity_name, entity_type, result.document.source, result.document.id),
+                (entity_name, entity_type, source, document_id),
             )
 
         canonical = {}
