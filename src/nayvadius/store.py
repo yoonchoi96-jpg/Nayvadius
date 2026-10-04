@@ -192,8 +192,20 @@ def save_result(result):
     payload = _result_payload(result)
 
     with connect() as db:
+        # Remove this document's old entity provenance before replacing its
+        # extracted entities. Otherwise reprocessing can leave ghost source
+        # bridges for entities no longer present in the document.
+        old_entities = db.execute(
+            "SELECT entity_name,entity_type FROM document_entities WHERE document_id=?",
+            (result.document.id,),
+        ).fetchall()
         db.execute("DELETE FROM document_entities WHERE document_id=?", (result.document.id,))
         db.execute("DELETE FROM document_relations WHERE document_id=?", (result.document.id,))
+        for entity_name, entity_type in old_entities:
+            db.execute(
+                "DELETE FROM entity_sources WHERE entity_name=? AND entity_type=? AND source=? AND document_id=?",
+                (entity_name, entity_type, result.document.source, result.document.id),
+            )
 
         canonical = {}
         for e in result.entities:
