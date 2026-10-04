@@ -36,8 +36,8 @@ def test_graph_includes_relation_evidence(tmp_path: Path):
         status TEXT NOT NULL DEFAULT 'checked'
     );
     """)
-    db.execute("INSERT INTO entities VALUES('Apple','Companies','',0.9)")
-    db.execute("INSERT INTO entities VALUES('Beats','Brands','',0.8)")
+    db.execute("INSERT INTO entities VALUES('Apple','Organizations','',0.9)")
+    db.execute("INSERT INTO entities VALUES('Beats','Organizations','',0.8)")
     db.execute("INSERT INTO relations VALUES('Apple','acquired','Beats',0.95)")
     db.execute("INSERT INTO relation_evidence VALUES('doc-1','Apple','acquired','Beats','rw-123','checked')")
     db.commit()
