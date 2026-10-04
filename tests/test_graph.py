@@ -60,8 +60,8 @@ def test_graph_skips_ambiguous_endpoint(tmp_path: Path):
         status TEXT NOT NULL DEFAULT 'checked'
     );
     """)
-    db.execute("INSERT INTO entities VALUES('Apple','Companies','',0.9)")
-    db.execute("INSERT INTO entities VALUES('Apple','Brands','',0.9)")
+    db.execute("INSERT INTO entities VALUES('Apple','Organizations','',0.9)")
+    db.execute("INSERT INTO entities VALUES('Apple','Products','',0.9)")
     db.execute("INSERT INTO entities VALUES('Steve Jobs','People','',0.9)")
     db.execute("INSERT INTO relations VALUES('Steve Jobs','founded','Apple',0.8)")
     db.commit()
