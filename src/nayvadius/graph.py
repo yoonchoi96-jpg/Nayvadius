@@ -37,6 +37,7 @@ def write_graph(db, root):
             "type": entity_type,
             "aliases": [x.strip() for x in (aliases or "").split(",") if x.strip()],
             "confidence": confidence,
+            "provenance": [],
         }
 
     by_name = _canonical_id(rows, db)
