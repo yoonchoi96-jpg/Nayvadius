@@ -2,7 +2,7 @@ import json
 from .io import load_jsonl
 from .processor import process_document, parse_llm
 from .models import Vocabulary
-from .store import upsert_document, save_result, result_is_current, link_vocabulary, reconcile_all_vocabularies
+from .store import upsert_document, save_result, result_is_current, link_vocabulary, reconcile_all_vocabularies, reconcile_document_vocabularies
 from .db import cache_get, cache_put, connect, status, prune_orphan_entities, record_failure, clear_failure
 from .providers import LLMProvider
 from .writer import write_markdown, write_entities, write_entities_from_db, write_entity_moc, write_vocabulary_from_db, write_vocabulary_moc, write_hsk_mocs
@@ -96,12 +96,19 @@ class Engine:
         for result in records:
             self._persist(result, stats)
 
-        # One reconciliation pass per Abraham batch.
+        # Deterministic Abel vocabulary linking; zero LLM/API calls.
         try:
+            with connect() as db:
+                pending = []
+                for result in records:
+                    metadata = result.document.metadata if isinstance(result.document.metadata, dict) else {}
+                    explicit = metadata.get("vocabulary_ids", []) if isinstance(metadata, dict) else []
+                    pending.append((result.document.id, result.document.content, explicit))
             stats["vocabulary_links"] = reconcile_all_vocabularies()
+            stats["document_vocabulary_links"] = reconcile_document_vocabularies(pending)
         except Exception as exc:
             stats["errors"] += 1
-            print("Vocabulary relink error", exc)
+            print("Vocabulary/document relink error", exc)
 
         return self._finish(stats)
 
