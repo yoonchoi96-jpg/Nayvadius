@@ -135,6 +135,12 @@ def link_document_to_vocabularies(document_id, content, explicit_ids=(), vocabul
                            (document_id, vid, match_type, confidence))
         return len(set(explicit) | {x[0] for x in candidates})
 
+def reconcile_all_vocabularies():
+    with connect() as db:
+        vocabularies = db.execute("SELECT id,word,traditional FROM vocabularies").fetchall()
+        documents = db.execute("SELECT id,content FROM documents").fetchall()
+    return reconcile_document_vocabularies([(doc_id, content, ()) for doc_id, content in documents]) if vocabularies else 0
+
 def reconcile_document_vocabularies(documents):
     with connect() as db:
         vocabulary_index = db.execute("SELECT id,word,traditional FROM vocabularies").fetchall()
