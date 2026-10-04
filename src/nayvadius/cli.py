@@ -1,6 +1,8 @@
 import argparse
+import json
 from .engine import Engine
-from .db import status, failed_document_ids\nfrom .qa import audit_database, write_report
+from .db import status, failed_document_ids
+from .qa import audit_database, write_report
 from .adapters import load_abraham_jsonl, load_abel, load_jacques_json
 
 
@@ -15,6 +17,15 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--max-attempts", type=int, default=5)
     args = parser.parse_args()
+
+    if args.command == "qa":
+        report = audit_database(args.db)
+        report_path = f"{args.output.rstrip("/")}/qa_report.json"
+        write_report(report, report_path)
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        if report["status"] == "FAIL":
+            raise SystemExit(1)
+        return
 
     if args.command == "status":
         print(status())
