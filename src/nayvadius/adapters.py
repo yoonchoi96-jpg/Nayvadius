@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import json
 
-from .models import Document, Entity, Relation, ProcessedDocument
+from .models import Document, Entity, Relation, ProcessedDocument, Vocabulary
 from .processor import normalize_entity_type
 
 
@@ -101,6 +101,70 @@ def load_abraham_jsonl(path: str) -> list[ProcessedDocument]:
             except (json.JSONDecodeError, ValueError) as exc:
                 raise ValueError(f"invalid Abraham input line {line_no}: {exc}") from exc
     return records
+
+
+
+def _csv_value(row, *keys):
+    for key in keys:
+        value = row.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
+def parse_abel_record(raw: dict) -> Vocabulary:
+    if not isinstance(raw, dict):
+        raise ValueError("Abel record must be an object")
+    word = _csv_value(raw, "word", "simplified", "词")
+    if not word:
+        raise ValueError("Abel record requires word")
+    vid = _csv_value(raw, "id", "word_id") or word
+    levels = raw.get("hsk_levels", raw.get("hsk_level", []))
+    books = raw.get("wordbooks", raw.get("wordbook", []))
+    if not isinstance(levels, list):
+        levels = [levels] if levels else []
+    if not isinstance(books, list):
+        books = [books] if books else []
+    levels = tuple(str(x).strip() for x in levels if str(x).strip())
+    books = tuple(str(x).strip() for x in books if str(x).strip())
+    return Vocabulary(
+        id=vid,
+        word=word,
+        traditional=_csv_value(raw, "traditional", "繁体"),
+        pinyin=_csv_value(raw, "pinyin", "拼音"),
+        pos=_csv_value(raw, "pos", "part_of_speech"),
+        meaning_ko=_csv_value(raw, "meaning_ko", "meaning", "definition_ko"),
+        hsk_levels=levels,
+        wordbooks=books,
+        source=str(raw.get("source") or "abel"),
+        metadata=raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {},
+    )
+
+
+def load_abel_csv(path: str) -> list[Vocabulary]:
+    import csv
+    records = []
+    with open(path, encoding="utf-8-sig", newline="") as handle:
+        for row in csv.DictReader(handle):
+            records.append(parse_abel_record(row))
+    return records
+
+
+def load_abel_jsonl(path: str) -> list[Vocabulary]:
+    records = []
+    with open(path, encoding="utf-8") as handle:
+        for line_no, line in enumerate(handle, 1):
+            if not line.strip():
+                continue
+            try:
+                records.append(parse_abel_record(json.loads(line)))
+            except (json.JSONDecodeError, ValueError) as exc:
+                raise ValueError(f"invalid Abel input line {line_no}: {exc}") from exc
+    return records
+
+
+def load_abel(path: str) -> list[Vocabulary]:
+    return load_abel_csv(path) if path.lower().endswith(".csv") else load_abel_jsonl(path)
 
 
 def load_documents(adapter: DocumentAdapter) -> list[Document]:
