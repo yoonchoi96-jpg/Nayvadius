@@ -10,7 +10,6 @@ class Entity:
 class Relation:
  source:str; relation:str; target:str; confidence:float=1.0
 @dataclass(frozen=True)
-@dataclass(frozen=True)
 class Vocabulary:
     id: str
     word: str
