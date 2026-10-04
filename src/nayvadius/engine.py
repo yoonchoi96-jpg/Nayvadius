@@ -124,6 +124,19 @@ class Engine:
                 stats.setdefault("errors", 0)
                 stats["errors"] += 1
                 print("ERROR vocabulary", vocabulary.id, exc)
+
+        # A newly imported Abel batch must immediately become visible to
+        # existing Abraham documents. This is deterministic and uses no LLM/API.
+        try:
+            with connect() as db:
+                documents = db.execute("SELECT id,content FROM documents").fetchall()
+            stats["document_vocabulary_links"] = reconcile_document_vocabularies(
+                [(doc_id, content, ()) for doc_id, content in documents]
+            )
+        except Exception as exc:
+            stats.setdefault("errors", 0)
+            stats["errors"] += 1
+            print("Document/vocabulary reconciliation error", exc)
         return self._finish(stats)
 
     def _finish(self, stats):
