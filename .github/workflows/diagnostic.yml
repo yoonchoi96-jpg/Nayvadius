@@ -1,0 +1,21 @@
+name: Nayvadius Diagnostic
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: pytest -q -x > /tmp/pytest.log 2>&1 || true
+      - run: python -m compileall -q src >> /tmp/pytest.log 2>&1 || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nayvadius-diagnostic
+          path: /tmp/pytest.log
