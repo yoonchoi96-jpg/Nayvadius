@@ -69,3 +69,40 @@ def test_graph_skips_ambiguous_endpoint(tmp_path: Path):
     write_graph(db, tmp_path / "output")
     data = json.loads((tmp_path / "output" / "graph.json").read_text())
     assert data["edges"] == []
+
+
+def test_graph_exports_cross_domain_vocabulary_and_music_edges(tmp_path: Path):
+    db = sqlite3.connect(tmp_path / "x.db")
+    db.executescript("""
+    CREATE TABLE entities(name TEXT,entity_type TEXT,aliases TEXT,confidence REAL);
+    CREATE TABLE relations(source_name TEXT,relation TEXT,target_name TEXT,confidence REAL);
+    CREATE TABLE vocabularies(id TEXT PRIMARY KEY,word TEXT,traditional TEXT,pinyin TEXT,source TEXT);
+    CREATE TABLE cross_domain_links(
+        left_name TEXT,left_type TEXT,right_id TEXT,right_kind TEXT,
+        confidence REAL,rule TEXT,provenance TEXT,
+        PRIMARY KEY(left_name,left_type,right_id,right_kind,rule)
+    );
+    """)
+    db.execute("INSERT INTO entities VALUES('Taylor Swift','People','',1.0)")
+    db.execute("INSERT INTO entities VALUES('Blank Space','MusicTracks','',1.0)")
+    db.execute("INSERT INTO vocabularies VALUES('v1','音乐','','yīnyuè','abel')")
+    db.execute(
+        """INSERT INTO cross_domain_links VALUES(
+           'Taylor Swift','People','v1','vocabulary',0.81,
+           'same_abraham_document','{"document_ids":["abraham-1"]}')"""
+    )
+    db.execute(
+        """INSERT INTO cross_domain_links VALUES(
+           'v1','Vocabulary','Blank Space','music_track',0.729,
+           'abraham_entity+abel_vocabulary+jacques_track',
+           '{"document_ids":["abraham-1","jacques-1"]}')"""
+    )
+    db.commit()
+
+    write_graph(db, tmp_path / "output")
+    data = json.loads((tmp_path / "output" / "graph.json").read_text())
+    assert "Vocabulary:v1" in {n["id"] for n in data["nodes"]}
+    cross = [e for e in data["edges"] if e.get("kind") == "cross_domain"]
+    assert len(cross) == 2
+    assert any(e["source"] == "People:Taylor Swift" and e["target"] == "Vocabulary:v1" for e in cross)
+    assert any(e["source"] == "Vocabulary:v1" and e["target"] == "MusicTracks:Blank Space" for e in cross)
