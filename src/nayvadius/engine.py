@@ -1,9 +1,9 @@
 from .io import load_jsonl
 from .processor import process_document, parse_llm
-from .store import upsert_document, save_result, result_is_current
+from .store import upsert_document, save_result, result_is_current, link_vocabulary
 from .db import cache_get, cache_put, connect, status, prune_orphan_entities, record_failure, clear_failure
 from .providers import LLMProvider
-from .writer import write_markdown, write_entities, write_entities_from_db, write_entity_moc
+from .writer import write_markdown, write_entities, write_entities_from_db, write_entity_moc, write_vocabulary_from_db
 from .graph import write_graph
 
 
@@ -95,11 +95,26 @@ class Engine:
             self._persist(result, stats)
         return self._finish(stats)
 
+    def run_vocabulary(self, vocabularies, offset=0, limit=0):
+        vocabularies = self._select(vocabularies, offset, limit)
+        stats = {"selected": len(vocabularies), "offset": offset, "limit": limit, "processed": 0, "links": 0}
+        for vocabulary in vocabularies:
+            explicit = vocabulary.metadata.get("entities", []) if isinstance(vocabulary.metadata, dict) else []
+            try:
+                stats["links"] += len(link_vocabulary(vocabulary, explicit))
+                stats["processed"] += 1
+            except Exception as exc:
+                stats.setdefault("errors", 0)
+                stats["errors"] += 1
+                print("ERROR vocabulary", vocabulary.id, exc)
+        return self._finish(stats)
+
     def _finish(self, stats):
         prune_orphan_entities()
         with connect() as db:
             write_graph(db, self.output)
             write_entities_from_db(db, self.output)
             write_entity_moc(db, self.output)
+            write_vocabulary_from_db(db, self.output)
         stats["db"] = status()
         return stats
