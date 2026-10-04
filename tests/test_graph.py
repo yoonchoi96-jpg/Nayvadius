@@ -17,7 +17,7 @@ def test_graph_export(tmp_path: Path):
     write_graph(db, tmp_path / "output")
     data = json.loads((tmp_path / "output" / "graph.json").read_text())
 
-    assert data["schema_version"] == "4"
+    assert data["schema_version"] == "5"
     assert data["edges"][0]["source"] == "People:Ada Lovelace"
     assert data["edges"][0]["target"] == "Products:Analytical Engine"
     assert data["edges"][0]["relation"] == "worked_on"
