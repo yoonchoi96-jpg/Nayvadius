@@ -154,6 +154,27 @@ def write_cross_domain_moc(db, root):
             lines.append(f"- [[{source}]] — **{relation}** → [[{target}]] — {confidence:.3f} — `{rule}`")
     else:
         lines.append("- No derived connections yet.")
+    lines += ["", "## Abraham ↔ Abel", ""]
+    try:
+        cross_rows = db.execute(
+            """SELECT c.left_name,c.left_type,c.right_id,c.confidence,c.rule,
+                      v.word,v.pinyin
+                 FROM cross_domain_links c
+                 JOIN vocabularies v ON v.id=c.right_id
+                WHERE c.right_kind='vocabulary'
+                ORDER BY c.left_name,v.word"""
+        ).fetchall()
+    except Exception as exc:
+        if "no such table" in str(exc):
+            cross_rows = []
+        else:
+            raise
+    if cross_rows:
+        for name, etype, vid, confidence, rule, word, pinyin in cross_rows:
+            lines.append(f"- [[{name}]] ({etype}) ↔ [[{word}]] — {confidence:.3f} — `{rule}`")
+    else:
+        lines.append("- No deterministic entity↔vocabulary connections yet.")
+
     write_atomic(root / "_Cross-Domain Connections.md", "\n".join(lines) + "\n")
 
 
