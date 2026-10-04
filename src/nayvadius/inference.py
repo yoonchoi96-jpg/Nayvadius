@@ -24,6 +24,7 @@ def derive_relation_chains(db=None):
             PRIMARY KEY(source_name,relation,target_name,rule)
         )"""
     )
+    db.execute("DELETE FROM derived_relations")
     rows = db.execute(
         """SELECT r1.source_name, r1.target_name, r1.confidence,
                   r2.target_name, r2.confidence
