@@ -1,7 +1,7 @@
 import argparse
 from .engine import Engine
 from .db import status, failed_document_ids
-from .adapters import load_abraham_jsonl, load_abel
+from .adapters import load_abraham_jsonl, load_abel, load_jacques_json
 
 
 def main() -> None:
@@ -9,7 +9,7 @@ def main() -> None:
     parser.add_argument("command", choices=["status", "process", "retry-failed"])
     parser.add_argument("--input", default="data/input.jsonl")
     parser.add_argument("--output", default="output")
-    parser.add_argument("--source", choices=["jsonl", "abraham", "abel"], default="abraham")
+    parser.add_argument("--source", choices=["jsonl", "abraham", "abel", "jacques"], default="abraham")
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--max-attempts", type=int, default=5)
@@ -20,7 +20,12 @@ def main() -> None:
         return
 
     engine = Engine(args.output)
-    if args.source == "abel":
+    if args.source == "jacques":
+        if args.command == "retry-failed":
+            raise SystemExit("retry-failed is only supported for document sources")
+        records = load_jacques_json(args.input)
+        print(engine.run_processed(records, offset=args.offset, limit=args.limit))
+    elif args.source == "abel":
         if args.command == "retry-failed":
             raise SystemExit("retry-failed is only supported for document sources")
         records = load_abel(args.input)
