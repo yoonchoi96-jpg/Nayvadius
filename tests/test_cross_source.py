@@ -41,15 +41,15 @@ def test_same_alias_across_entity_types_stays_separate(tmp_path, monkeypatch):
     state = tmp_path / "state.db"
     monkeypatch.setattr("nayvadius.config.settings.state_path", str(state))
 
-    save_result(_result("doc-company", "abraham", "Apple Inc.", "Organizations"))
-    save_result(_result("doc-brand", "jacques", "Apple Inc.", "Organizations"))
+    save_result(_result("doc-company", "abraham", "Apple", "Organizations"))
+    save_result(_result("doc-product", "jacques", "Apple", "Products"))
 
     with connect() as db:
         rows = db.execute(
-            "SELECT name,entity_type FROM entities WHERE name='Apple Inc.' ORDER BY entity_type"
+            "SELECT name,entity_type FROM entities WHERE name='Apple' ORDER BY entity_type"
         ).fetchall()
 
-    assert rows == [("Apple Inc.", "Organizations"), ("Apple Inc.", "Organizations")]
+    assert rows == [("Apple", "Organizations"), ("Apple", "Products")]
 
 
 def test_entity_writer_contains_documents_and_relations(tmp_path, monkeypatch):
