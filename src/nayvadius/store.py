@@ -221,6 +221,10 @@ def save_result(result):
                 "INSERT OR REPLACE INTO document_entities VALUES(?,?,?,?)",
                 (result.document.id, name, e.entity_type, e.confidence),
             )
+            db.execute(
+                "INSERT OR REPLACE INTO entity_sources(entity_name,entity_type,source,document_id) VALUES(?,?,?,?)",
+                (name, e.entity_type, result.document.source, result.document.id),
+            )
             vocab_rows = db.execute(
                 "SELECT id,word,traditional FROM vocabularies WHERE word=? OR traditional=?",
                 (name, name),
