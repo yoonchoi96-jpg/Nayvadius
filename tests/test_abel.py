@@ -46,3 +46,41 @@ def test_duplicate_headwords_merge_across_sources():
         assert len(rows) == 1
         assert "HSK6" in rows[0][1] and "HSK7" in rows[0][1]
         assert "HSK 6급" in rows[0][2] and "HSK 7-9급" in rows[0][2]
+
+
+def test_abel_source_provenance_and_document_linking():
+    from nayvadius.db import connect
+    from nayvadius.models import Document
+    from nayvadius.store import link_vocabulary, link_document_to_vocabularies
+
+    value = Vocabulary(
+        id="L6-0002",
+        word="人工智能",
+        traditional="人工智能",
+        pinyin="rengong zhineng",
+        hsk_levels=("HSK6",),
+        source="abel",
+        metadata={"wordbook": "HSK 6급"},
+    )
+    link_vocabulary(value)
+
+    with connect() as db:
+        db.execute(
+            "INSERT OR REPLACE INTO documents(id,title,content_hash,source,status) VALUES(?,?,?,?,?)",
+            ("abraham-1", "AI", "hash", "readwise", "done"),
+        )
+
+    count = link_document_to_vocabularies("abraham-1", "人工智能正在改变产业。")
+    assert count == 1
+
+    with connect() as db:
+        source = db.execute(
+            "SELECT source_id,source FROM vocabulary_sources WHERE vocabulary_id=?",
+            ("L6-0002",),
+        ).fetchone()
+        link = db.execute(
+            "SELECT vocabulary_id,match_type FROM document_vocabulary_links WHERE document_id=?",
+            ("abraham-1",),
+        ).fetchone()
+    assert source == ("L6-0002", "abel")
+    assert link == ("L6-0002", "exact")
