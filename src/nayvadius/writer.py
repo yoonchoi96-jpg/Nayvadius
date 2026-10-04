@@ -63,7 +63,7 @@ def write_entity_moc(db, root):
     root = Path(root) / "entities"
     root.mkdir(parents=True, exist_ok=True)
     rows = list(db.execute("SELECT name,entity_type,aliases,confidence FROM entities ORDER BY entity_type,name"))
-    lines = ["---", "title: \"Entity Index\"", "type: \"MOC\"", "---", "", "# Entity Index", ""]
+    lines = ["---", "title: \"Entity Index\"", "type: \"MOC\"", "---", "", "# Entity Index", "", "> Canonical entities across all connected apps. Each note retains source provenance and relation/document backlinks.", ""]
     current = None
     for name, entity_type, aliases, confidence in rows:
         if entity_type != current:
