@@ -9,6 +9,7 @@ from .writer import write_markdown, write_entities, write_entities_from_db, writ
 from .graph import write_graph
 from .inference import derive_relation_chains, derive_cross_domain_links
 from .source_bridges import derive_source_bridge_links
+from .notion_export import write_notion_manifest
 
 
 class Engine:
@@ -156,5 +157,6 @@ class Engine:
             write_domain_mocs(db, self.output)
             write_knowledge_index(db, self.output)
             write_cross_domain_moc(db, self.output)
+            write_notion_manifest(db, self.output)
         stats["db"] = status()
         return stats
