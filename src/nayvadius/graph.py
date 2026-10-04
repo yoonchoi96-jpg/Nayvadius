@@ -125,8 +125,71 @@ def write_graph(db, root):
         seen.add(key)
         edges.append(edge)
 
+    # Export deterministic cross-domain links as first-class graph edges.
+    try:
+        vocab_rows = db.execute(
+            "SELECT id,word,traditional,pinyin,source FROM vocabularies ORDER BY id"
+        ).fetchall()
+    except Exception as exc:
+        if "no such table" in str(exc):
+            vocab_rows = []
+        else:
+            raise
+    for vocabulary_id, word, traditional, pinyin, source in vocab_rows:
+        node_id = f"Vocabulary:{vocabulary_id}"
+        nodes[node_id] = {
+            "id": node_id,
+            "name": word,
+            "type": "Vocabulary",
+            "vocabulary_id": vocabulary_id,
+            "traditional": traditional or "",
+            "pinyin": pinyin or "",
+            "source": source,
+        }
+
+    try:
+        cross_rows = db.execute(
+            """SELECT left_name,left_type,right_id,right_kind,confidence,rule,provenance
+                 FROM cross_domain_links
+                ORDER BY left_name,right_kind,right_id"""
+        ).fetchall()
+    except Exception as exc:
+        if "no such table" in str(exc):
+            cross_rows = []
+        else:
+            raise
+    for left_name, left_type, right_id, right_kind, confidence, rule, provenance in cross_rows:
+        if right_kind == "vocabulary":
+            source_id = by_name.get(left_name, [])
+            target_id = f"Vocabulary:{right_id}"
+            if len(source_id) != 1 or target_id not in nodes:
+                continue
+            source_id = source_id[0]
+        elif left_type == "Vocabulary":
+            source_id = f"Vocabulary:{left_name}"
+            target_id = by_name.get(right_id, [])
+            if source_id not in nodes or len(target_id) != 1:
+                continue
+            target_id = target_id[0]
+        else:
+            continue
+        key = (source_id, "cross_domain", target_id, "cross_domain")
+        if key in seen:
+            continue
+        edge = {
+            "source": source_id,
+            "relation": "cross_domain",
+            "target": target_id,
+            "confidence": confidence,
+            "kind": "cross_domain",
+            "rule": rule,
+            "provenance": json.loads(provenance),
+        }
+        seen.add(key)
+        edges.append(edge)
+
     payload = {
-        "schema_version": "5",
+        "schema_version": "6",
         "nodes": list(nodes.values()),
         "edges": edges,
     }
