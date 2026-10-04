@@ -1,7 +1,8 @@
 import sqlite3
 from pathlib import Path
 
-from nayvadius.db import connect, save_result
+from nayvadius.db import connect
+from nayvadius.store import save_result
 from nayvadius.models import Document, Entity, ProcessedDocument, Relation
 from nayvadius.writer import write_entities_from_db
 
