@@ -148,6 +148,8 @@ def reconcile_document_vocabularies(documents):
     matcher = VocabularyMatcher(vocabulary_index)
     total = 0
     for document_id, content, explicit_ids in documents:
+        if not content:
+            continue
         matches = matcher.match(content)
         with connect() as db:
             explicit = []
@@ -178,13 +180,13 @@ def upsert_document(doc, force=False):
         if old and old[0] == h and not force:
             return False
         db.execute(
-            """INSERT INTO documents(id,title,content_hash,source,status)
-               VALUES(?,?,?,?,'pending')
+            """INSERT INTO documents(id,title,content_hash,source,status,content)
+               VALUES(?,?,?,?,'pending',?)
                ON CONFLICT(id) DO UPDATE SET
                title=excluded.title, content_hash=excluded.content_hash,
-               source=excluded.source, status='pending',
+               source=excluded.source, status='pending', content=excluded.content,
                updated_at=CURRENT_TIMESTAMP""",
-            (doc.id, doc.title, h, doc.source),
+            (doc.id, doc.title, h, doc.source, doc.content),
         )
     return True
 

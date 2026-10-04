@@ -115,6 +115,19 @@ def audit_database(path: str | Path) -> dict[str, Any]:
             alias=row["alias"], entity_type=row["entity_type"], canonical_names=names,
         ))
 
+    orphan_aliases = db.execute(
+        "SELECT ea.alias,ea.canonical_name,ea.entity_type FROM entity_aliases ea "
+        "LEFT JOIN entities e ON e.name=ea.canonical_name AND e.entity_type=ea.entity_type "
+        "WHERE e.name IS NULL LIMIT 100"
+    ).fetchall()
+    for row in orphan_aliases:
+        findings.append(_finding(
+            "alias.orphan", "error",
+            "Alias points to a missing canonical entity.",
+            alias=row["alias"], canonical_name=row["canonical_name"],
+            entity_type=row["entity_type"],
+        ))
+
     # Document/entity referential integrity.
     orphan_de = db.execute(
         "SELECT de.document_id,de.entity_name,de.entity_type FROM document_entities de "

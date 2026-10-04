@@ -173,3 +173,7 @@ an LLM/API call. The resulting machine-readable report is written to
 This is deliberately separate from Abraham's first-stage structural QA:
 Abraham validates ingestion/extraction state; Nayvadius validates the integrity
 and downstream consistency of the canonical knowledge graph.
+
+## Architecture audit
+
+See [NAYVADIUS INITIAL AUDIT](docs/nayvadius_initial_audit.md) for the repository-grounded schema, processing, graph, output, workflow, and gap inventory.

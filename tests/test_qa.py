@@ -80,6 +80,18 @@ def test_alias_collision_is_warning_not_failure(tmp_path: Path):
     assert report["findings"][0]["rule"] == "alias.ambiguous"
 
 
+def test_orphan_alias_fails_qa(tmp_path: Path):
+    path = tmp_path / "qa.db"
+    db = _db(path)
+    db.execute("INSERT INTO entity_aliases VALUES('orphan','Missing Entity','Concepts')")
+    db.commit()
+    db.close()
+
+    report = audit_database(path)
+    assert report["status"] == "FAIL"
+    assert "alias.orphan" in {finding["rule"] for finding in report["findings"]}
+
+
 def test_report_is_json(tmp_path: Path):
     path = tmp_path / "qa.db"
     db = _db(path)
