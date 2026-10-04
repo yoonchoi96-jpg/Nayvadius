@@ -1,4 +1,8 @@
 from pathlib import Path
+def _document_vocabulary_lines(db, document_id):
+ rows=db.execute("SELECT v.word,v.pinyin FROM document_vocabulary_links l JOIN vocabularies v ON v.id=l.vocabulary_id WHERE l.document_id=? ORDER BY v.word",(document_id,)).fetchall()
+ return "\n".join(f"- [[{word}]] — {pinyin or '-'}" for word,pinyin in rows) or "- None"
+
 def safe(s): return ''.join(c if c.isalnum() or c in ' -_' else '_' for c in s).strip()[:120] or 'untitled'
 def yaml_scalar(value):
  value=str(value).replace('\\','\\\\').replace('"','\\\"').replace('\n',' ')
@@ -10,7 +14,7 @@ def write_markdown(result,root):
  tags=', '.join(yaml_scalar(x) for x in result.tags)
  ents='\n'.join('- [['+e.name+']] ('+e.entity_type+')' for e in result.entities) or '- None'
  rels='\n'.join('- [['+x.source+']] - '+x.relation+' -> [['+x.target+']]' for x in result.relations) or '- None'
- text=('---\n'+'id: '+yaml_scalar(result.document.id)+'\n'+'title: '+yaml_scalar(result.document.title)+'\n'+'source: '+yaml_scalar(result.document.source)+'\n'+'importance: '+str(result.importance)+'\n'+'document_type: '+yaml_scalar(result.document_type)+'\n'+'tags: ['+tags+']\n---\n\n# '+result.document.title+'\n\n## Summary\n'+result.summary+'\n\n## Korean\n'+result.translation_ko+'\n\n## Entities\n'+ents+'\n\n## Relations\n'+rels+'\n')
+ text=('---\n'+'id: '+yaml_scalar(result.document.id)+'\n'+'title: '+yaml_scalar(result.document.title)+'\n'+'source: '+yaml_scalar(result.document.source)+'\n'+'importance: '+str(result.importance)+'\n'+'document_type: '+yaml_scalar(result.document_type)+'\n'+'tags: ['+tags+']\n---\n\n# '+result.document.title+'\n\n## Summary\n'+result.summary+'\n\n## Korean\n'+result.translation_ko+'\n\n## Entities\n'+ents+'\n\n## Relations\n'+rels+'\n\n## Vocabulary\n'+_document_vocabulary_lines(connect(), result.document.id)+'\n')
  write_atomic(out,text)
 def write_entities(entities,root):
  root=Path(root)/'entities'
