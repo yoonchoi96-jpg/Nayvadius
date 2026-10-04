@@ -24,3 +24,23 @@ def test_notion_manifest_is_deterministic_and_keeps_provenance(tmp_path: Path):
     assert payload1 == payload2
     assert payload1["entities"][0]["id"] == payload2["entities"][0]["id"]
     assert payload1["entities"][0]["provenance"] == [{"source": "abraham", "document_id": "doc-1"}]
+    assert payload1["schema_version"] == 2
+    assert payload1["upsert_key"] == "id"
+
+
+def test_notion_manifest_projects_cross_domain_and_source_bridges(tmp_path: Path):
+    db = connect(tmp_path / "state.db")
+    db.execute("INSERT INTO entities VALUES(?,?,?,?)", ("Taylor Swift", "People", "", 1.0))
+    db.execute(
+        "INSERT INTO cross_domain_links VALUES(?,?,?,?,?,?,?)",
+        ("Taylor Swift", "People", "v1", "vocabulary", 0.9, "same_abraham_document", '{"document_ids":["doc-1"]}'),
+    )
+    db.execute(
+        "INSERT INTO source_bridge_links VALUES(?,?,?,?,?,?,?)",
+        ("Taylor Swift", "People", "abraham", "jacques", 1.0, "shared_canonical_entity", '{"sources":{"abraham":{"document_ids":["doc-1"]},"jacques":{"document_ids":["track-1"]}}}'),
+    )
+    db.commit()
+    payload = json.loads(Path(write_notion_manifest(db, tmp_path)).read_text())
+    kinds = {(x["kind"], x["relation"]) for x in payload["relations"]}
+    assert ("cross_domain", "cross_domain") in kinds
+    assert ("source_bridge", "source_bridge") in kinds
