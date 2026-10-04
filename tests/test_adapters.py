@@ -20,8 +20,7 @@ def test_load_abraham_jsonl_preserves_enrichment(tmp_path: Path):
         "relations": [
             {"source": "Apple", "relation": "related_to", "target": "Example"}
         ],
-    }) + "
-", encoding="utf-8")
+    }) + "\\n", encoding="utf-8")
 
     records = load_abraham_jsonl(str(p))
     result = records[0]
