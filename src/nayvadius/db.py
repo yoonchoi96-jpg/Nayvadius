@@ -6,10 +6,6 @@ SCHEMA="""CREATE TABLE IF NOT EXISTS documents(id TEXT PRIMARY KEY,title TEXT NO
 
 def connect(path=None):
  p=Path(path or settings.state_path); p.parent.mkdir(parents=True,exist_ok=True); c=sqlite3.connect(p,timeout=30); c.execute("PRAGMA journal_mode=WAL"); c.execute("PRAGMA busy_timeout=30000"); c.execute("PRAGMA foreign_keys=ON"); c.executescript(SCHEMA)
- rows=c.execute("SELECT name,entity_type,aliases FROM entities").fetchall()
- for name,entity_type,aliases in rows:
-  for value in [name]+[x.strip() for x in (aliases or "").split(",") if x.strip()]:
-   c.execute("INSERT OR IGNORE INTO entity_aliases(alias,canonical_name,entity_type) VALUES(?,?,?)",(value.strip().casefold(),name,entity_type))
  return c
 
 def cache_get(key):
