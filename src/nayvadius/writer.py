@@ -123,6 +123,7 @@ def write_knowledge_index(db, root):
         f"- Vocabulary: **{vocab_count}**",
         f"- Source types: **{source_entity_count}**",
         f"- Canonical source bridges: **{db.execute('SELECT COUNT(*) FROM source_bridge_links').fetchone()[0] if _table_exists(db, 'source_bridge_links') else 0}**",
+        f"- Entity merge decisions: **{db.execute('SELECT COUNT(*) FROM entity_merge_log').fetchone()[0] if _table_exists(db, 'entity_merge_log') else 0}**",
         "",
         "## Navigation", "",
         "- [[entities/MusicTracks/_Index]] — Jacques tracks",
