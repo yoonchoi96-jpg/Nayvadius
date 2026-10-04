@@ -122,6 +122,7 @@ def write_knowledge_index(db, root):
         f"- Relations: **{relation_count}**",
         f"- Vocabulary: **{vocab_count}**",
         f"- Source types: **{source_entity_count}**",
+        f"- Canonical source bridges: **{_table_exists(db, "source_bridge_links") and db.execute("SELECT COUNT(*) FROM source_bridge_links").fetchone()[0] or 0}**",
         "",
         "## Navigation", "",
         "- [[entities/MusicTracks/_Index]] — Jacques tracks",
