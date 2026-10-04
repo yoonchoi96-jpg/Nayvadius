@@ -246,4 +246,5 @@ def merge_entity(canonical_name, duplicate_name, entity_type, reason="explicit")
   db.execute("DELETE FROM entity_sources WHERE entity_name=? AND entity_type=?",(duplicate_name,entity_type))
   db.execute("DELETE FROM entity_aliases WHERE canonical_name=? AND entity_type=?",(duplicate_name,entity_type))
   for alias in aliases: db.execute("INSERT OR IGNORE INTO entity_aliases(alias,canonical_name,entity_type) VALUES(?,?,?)",(alias.casefold(),canonical_name,entity_type))
+  db.execute("INSERT INTO entity_merge_log(canonical_name,duplicate_name,entity_type,reason) VALUES(?,?,?,?)",(canonical_name,duplicate_name,entity_type,reason))
   db.execute("DELETE FROM entities WHERE name=? AND entity_type=?",(duplicate_name,entity_type)); return True
