@@ -3,6 +3,8 @@ from pathlib import Path
 
 from nayvadius.db import connect
 from nayvadius.notion_export import write_notion_manifest
+from nayvadius.inference import derive_cross_domain_links
+from nayvadius.source_bridges import derive_source_bridge_links
 
 
 def test_notion_manifest_is_deterministic_and_keeps_provenance(tmp_path: Path):
@@ -31,6 +33,8 @@ def test_notion_manifest_is_deterministic_and_keeps_provenance(tmp_path: Path):
 def test_notion_manifest_projects_cross_domain_and_source_bridges(tmp_path: Path):
     db = connect(tmp_path / "state.db")
     db.execute("INSERT INTO entities VALUES(?,?,?,?)", ("Taylor Swift", "People", "", 1.0))
+    derive_cross_domain_links(db)
+    derive_source_bridge_links(db)
     db.execute(
         "INSERT INTO cross_domain_links VALUES(?,?,?,?,?,?,?)",
         ("Taylor Swift", "People", "v1", "vocabulary", 0.9, "same_abraham_document", '{"document_ids":["doc-1"]}'),
