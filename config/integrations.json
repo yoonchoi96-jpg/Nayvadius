@@ -1,7 +1,12 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "role": "personal_system_integration_hub",
   "principle": "small_apps_collect_or_specialize; Nayvadius integrates canonical state and downstream knowledge views",
+  "record_contract": {
+    "required": ["id", "content", "source"],
+    "recommended": ["title", "metadata", "tags", "entities", "relations", "related_ids", "importance", "document_type"],
+    "provenance_rule": "Every imported record keeps its source and upstream identifier; normalized and derived facts must remain distinguishable from raw source data."
+  },
   "sources": [
     {
       "id": "abraham",
@@ -24,7 +29,7 @@
       "domain": "music",
       "role": "music_intelligence_source",
       "upstream_repo": "yoonchoi96-jpg/Jacques",
-      "contract": "Jacques music DB/export",
+      "contract": "data/jacques_export.json",
       "ownership": ["Spotify ingestion", "audio/enrichment", "editorial source sync", "music analysis"]
     }
   ],
@@ -37,11 +42,14 @@
       "provenance",
       "evidence",
       "knowledge graph",
+      "derived knowledge",
       "downstream Obsidian/Notion projection"
+    ],
+    "non_responsibilities": [
+      "primary source collection",
+      "domain-specific source scraping",
+      "silent deletion of raw source facts"
     ]
   },
-  "outputs": [
-    "Obsidian",
-    "Notion"
-  ]
+  "outputs": ["Obsidian", "Notion"]
 }
