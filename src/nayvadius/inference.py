@@ -135,36 +135,42 @@ def derive_cross_domain_links(db=None):
 
     # Three-way bridge:
     # Abraham entity + Abel vocabulary + the same canonical entity in Jacques.
-    bridge_rows = db.execute(
-        """SELECT av.entity_name, av.entity_type, av.vocabulary_id,
-                  MIN(av.entity_confidence, av.vocab_confidence, jtrack.confidence),
-                  av.abraham_document_id, jtrack.document_id,
-                  jtrack.target_name
-             FROM (
-                 SELECT de.entity_name, de.entity_type, dv.vocabulary_id,
-                        de.confidence AS entity_confidence,
-                        dv.confidence AS vocab_confidence,
-                        d.id AS abraham_document_id
-                   FROM document_entities de
-                   JOIN documents d ON d.id=de.document_id
-                   JOIN document_vocabulary_links dv ON dv.document_id=d.id
-                  WHERE d.source='abraham'
-             ) av
-             JOIN document_entities je
-               ON je.entity_name=av.entity_name
-              AND je.entity_type=av.entity_type
-             JOIN documents jd ON jd.id=je.document_id AND jd.source='jacques'
-             JOIN document_relations jtrack
-               ON jtrack.document_id=je.document_id
-              AND jtrack.source_name=je.entity_name
-              AND jtrack.relation='performed'
-             JOIN entities te
-               ON te.name=jtrack.target_name
-              AND te.entity_type='MusicTracks'
-            GROUP BY av.entity_name,av.entity_type,av.vocabulary_id,
-                     av.abraham_document_id,jtrack.document_id,
-                     jtrack.target_name"""
-    ).fetchall()
+    try:
+        bridge_rows = db.execute(
+            """SELECT av.entity_name, av.entity_type, av.vocabulary_id,
+                      MIN(av.entity_confidence, av.vocab_confidence, jtrack.confidence),
+                      av.abraham_document_id, jtrack.document_id,
+                      jtrack.target_name
+                 FROM (
+                     SELECT de.entity_name, de.entity_type, dv.vocabulary_id,
+                            de.confidence AS entity_confidence,
+                            dv.confidence AS vocab_confidence,
+                            d.id AS abraham_document_id
+                       FROM document_entities de
+                       JOIN documents d ON d.id=de.document_id
+                       JOIN document_vocabulary_links dv ON dv.document_id=d.id
+                      WHERE d.source='abraham'
+                 ) av
+                 JOIN document_entities je
+                   ON je.entity_name=av.entity_name
+                  AND je.entity_type=av.entity_type
+                 JOIN documents jd ON jd.id=je.document_id AND jd.source='jacques'
+                 JOIN document_relations jtrack
+                   ON jtrack.document_id=je.document_id
+                  AND jtrack.source_name=je.entity_name
+                  AND jtrack.relation='performed'
+                 JOIN entities te
+                   ON te.name=jtrack.target_name
+                  AND te.entity_type='MusicTracks'
+                GROUP BY av.entity_name,av.entity_type,av.vocabulary_id,
+                         av.abraham_document_id,jtrack.document_id,
+                         jtrack.target_name"""
+        ).fetchall()
+    except Exception as exc:
+        if "no such table" in str(exc):
+            bridge_rows = []
+        else:
+            raise
 
     for (entity_name, entity_type, vocabulary_id, confidence,
          abraham_document_id, jacques_document_id, track_name) in bridge_rows:
