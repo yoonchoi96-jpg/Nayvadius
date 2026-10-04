@@ -1,6 +1,7 @@
 from .db import connect, save_vocabulary, save_vocabulary_alias, save_vocabulary_source, resolve_vocabulary_id, link_document_vocabularies, merge_vocabulary
 from .models import Vocabulary
 from .hash import content_hash
+from .vocabulary_matcher import VocabularyMatcher
 import json
 import re
 import hashlib
@@ -144,9 +145,30 @@ def reconcile_all_vocabularies():
 def reconcile_document_vocabularies(documents):
     with connect() as db:
         vocabulary_index = db.execute("SELECT id,word,traditional FROM vocabularies").fetchall()
+    matcher = VocabularyMatcher(vocabulary_index)
     total = 0
     for document_id, content, explicit_ids in documents:
-        total += link_document_to_vocabularies(document_id, content, explicit_ids, vocabulary_index)
+        matches = matcher.match(content)
+        with connect() as db:
+            explicit = []
+            for value in explicit_ids:
+                canonical = resolve_vocabulary_id(value)
+                if canonical:
+                    explicit.append(canonical)
+            db.execute("DELETE FROM document_vocabulary_links WHERE document_id=?", (document_id,))
+            for vid in dict.fromkeys(explicit):
+                db.execute(
+                    "INSERT OR REPLACE INTO document_vocabulary_links VALUES(?,?,?,?)",
+                    (document_id, vid, "explicit", 1.0),
+                )
+            for vid, count in matches.items():
+                if vid not in explicit:
+                    confidence = min(1.0, 0.8 + min(count, 4) * 0.05)
+                    db.execute(
+                        "INSERT OR REPLACE INTO document_vocabulary_links VALUES(?,?,?,?)",
+                        (document_id, vid, "exact", confidence),
+                    )
+            total += len(set(explicit) | set(matches))
     return total
 
 def upsert_document(doc, force=False):
