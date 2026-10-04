@@ -92,3 +92,16 @@ def write_vocabulary_from_db(db, root):
             "## Linked entities\n" + entity_lines + "\n"
         )
         write_atomic(out, text)
+
+
+def write_vocabulary_moc(db, root):
+    root = Path(root) / "vocabulary"
+    root.mkdir(parents=True, exist_ok=True)
+    rows = list(db.execute(
+        "SELECT id,word,pinyin,hsk_levels,wordbooks FROM vocabularies ORDER BY word"
+    ))
+    lines = ["---", "title: \"Vocabulary Index\"", "type: \"MOC\"", "---", "", "# Vocabulary Index", ""]
+    for vid, word, pinyin, hsk_levels, wordbooks in rows:
+        levels = ", ".join(x for x in (hsk_levels or "").split("|") if x) or "unclassified"
+        lines.append(f"- [[{word}]] — {pinyin or '-'} — {levels}")
+    write_atomic(root / "_Vocabulary Index.md", "\n".join(lines) + "\n")
