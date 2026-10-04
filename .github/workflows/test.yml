@@ -18,3 +18,5 @@ jobs:
       - run: pytest -q
       - name: End-to-end smoke test
         run: python -m nayvadius.cli process --input data/input.example.jsonl --output /tmp/nayvadius-smoke
+      - name: Deterministic knowledge QA gate
+        run: python -m nayvadius.cli qa --db data/nayvadius.db --output /tmp/nayvadius-qa
