@@ -33,7 +33,7 @@ def test_parse_abel_json_shape_preserves_memberships():
 
 
 def test_duplicate_headwords_merge_across_sources():
-    from nayvadius.db import connect, merge_vocabulary
+    from nayvadius.db import connect
     from nayvadius.models import Vocabulary
     from nayvadius.store import link_vocabulary
 
