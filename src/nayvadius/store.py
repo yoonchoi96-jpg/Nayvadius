@@ -94,6 +94,16 @@ def link_vocabulary(vocabulary, explicit_entities=()):
                 key=(name,entity_type)
                 if key not in seen: links.append((name,entity_type,"exact",1.0)); seen.add(key)
         save_vocabulary(vocabulary, links)
+        # Merge existing records that share the same normalized headword.
+        with connect() as db:
+            rows = []
+            for value in (vocabulary.word, vocabulary.traditional):
+                alias = _norm_alias(value)
+                if alias:
+                    rows.extend(db.execute("SELECT canonical_id FROM vocabulary_aliases WHERE alias=?", (alias,)).fetchall())
+        for (other_id,) in dict.fromkeys(rows):
+            if other_id != vocabulary.id:
+                merge_vocabulary(vocabulary.id, other_id)
         for alias in [vocabulary.id, vocabulary.word, vocabulary.traditional]:
             save_vocabulary_alias(alias, vocabulary.id)
         save_vocabulary_source(vocabulary.id, vocabulary.id, vocabulary.source, vocabulary.metadata)
