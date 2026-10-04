@@ -158,6 +158,8 @@ def merge_entity(canonical_name, duplicate_name, entity_type):
   for document_id,source,relation,target,evidence_document_id,status,checked_at in evidence:
    source=canonical_name if source==duplicate_name else source; target=canonical_name if target==duplicate_name else target
    db.execute("INSERT OR REPLACE INTO relation_evidence(document_id,source_name,relation,target_name,evidence_document_id,status,checked_at) VALUES(?,?,?,?,?,?,?)",(document_id,source,relation,target,evidence_document_id,status,checked_at))
+  db.execute("UPDATE OR IGNORE entity_sources SET entity_name=? WHERE entity_name=? AND entity_type=?",(canonical_name,duplicate_name,entity_type))
+  db.execute("DELETE FROM entity_sources WHERE entity_name=? AND entity_type=?",(duplicate_name,entity_type))
   db.execute("DELETE FROM entity_aliases WHERE canonical_name=? AND entity_type=?",(duplicate_name,entity_type))
   for alias in aliases: db.execute("INSERT OR IGNORE INTO entity_aliases(alias,canonical_name,entity_type) VALUES(?,?,?)",(alias.casefold(),canonical_name,entity_type))
   db.execute("DELETE FROM entities WHERE name=? AND entity_type=?",(duplicate_name,entity_type)); return True
