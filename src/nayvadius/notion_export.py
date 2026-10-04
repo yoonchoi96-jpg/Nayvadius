@@ -48,17 +48,24 @@ def write_notion_manifest(db, root: str) -> str:
         })
 
     documents = []
-    for document_id, title, source, importance, document_type in db.execute(
-        "SELECT id,title,source,importance,document_type FROM documents ORDER BY id"
-    ):
+    document_columns = {row[1] for row in db.execute("PRAGMA table_info(documents)")}
+    optional = []
+    if "importance" in document_columns:
+        optional.append("importance")
+    if "document_type" in document_columns:
+        optional.append("document_type")
+    select_columns = ["id", "title", "source", *optional]
+    for row in db.execute(f"SELECT {','.join(select_columns)} FROM documents ORDER BY id"):
+        values = dict(zip(select_columns, row))
+        document_id = values["id"]
         documents.append({
             "id": _page_id("document", document_id),
             "kind": "document",
             "document_id": document_id,
-            "title": title,
-            "source": source,
-            "importance": importance,
-            "document_type": document_type,
+            "title": values["title"],
+            "source": values["source"],
+            "importance": values.get("importance"),
+            "document_type": values.get("document_type"),
         })
 
     relations = []
