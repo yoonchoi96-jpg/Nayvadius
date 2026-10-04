@@ -1,4 +1,4 @@
-from .db import connect
+from .db import connect, save_vocabulary
 from .hash import content_hash
 import json
 import re
