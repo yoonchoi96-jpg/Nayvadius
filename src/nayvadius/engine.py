@@ -93,6 +93,26 @@ class Engine:
                  "abraham_records": len(records), "force_refresh": True}
         for result in records:
             self._persist(result, stats)
+            # Abraham enrichment can introduce entities that were already present in Abel.
+            # Re-link existing vocabulary records after each document batch.
+            try:
+                with connect() as db:
+                    vocabularies = db.execute("SELECT id,word,traditional,pinyin,pos,meaning_ko,hsk_levels,wordbooks,source,metadata FROM vocabularies").fetchall()
+                for row in vocabularies:
+                    from .models import Vocabulary
+                    vocabulary = Vocabulary(
+                        id=row[0], word=row[1], traditional=row[2] or "", pinyin=row[3] or "",
+                        pos=row[4] or "", meaning_ko=row[5] or "",
+                        hsk_levels=tuple(x for x in (row[6] or "").split("|") if x),
+                        wordbooks=tuple(x for x in (row[7] or "").split("|") if x),
+                        source=row[8] or "abel",
+                        metadata=__import__("json").loads(row[9] or "{}"),
+                    )
+                    explicit = vocabulary.metadata.get("entities", []) if isinstance(vocabulary.metadata, dict) else []
+                    link_vocabulary(vocabulary, explicit)
+            except Exception as exc:
+                stats["errors"] += 1
+                print("Vocabulary relink error", exc)
         return self._finish(stats)
 
     def run_vocabulary(self, vocabularies, offset=0, limit=0):
