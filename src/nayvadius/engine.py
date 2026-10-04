@@ -7,6 +7,7 @@ from .db import cache_get, cache_put, connect, status, prune_orphan_entities, re
 from .providers import LLMProvider
 from .writer import write_markdown, write_entities, write_entities_from_db, write_entity_moc, write_vocabulary_from_db, write_vocabulary_moc, write_hsk_mocs, write_knowledge_index, write_domain_mocs
 from .graph import write_graph
+from .inference import derive_relation_chains
 
 
 class Engine:
@@ -141,6 +142,7 @@ class Engine:
 
     def _finish(self, stats):
         prune_orphan_entities()
+        stats["derived_relations"] = derive_relation_chains()
         with connect() as db:
             write_graph(db, self.output)
             write_entities_from_db(db, self.output)
