@@ -142,7 +142,8 @@ class Engine:
 
     def _finish(self, stats):
         prune_orphan_entities()
-        stats["derived_relations"] = derive_relation_chains()\n        stats["cross_domain_links"] = derive_cross_domain_links()
+        stats["derived_relations"] = derive_relation_chains()
+        stats["cross_domain_links"] = derive_cross_domain_links()
         with connect() as db:
             write_graph(db, self.output)
             write_entities_from_db(db, self.output)
