@@ -62,6 +62,14 @@ def write_graph(db, root):
             "status": status,
         })
 
+    relation_provenance = {}
+    try:
+        for doc_id, source_name, relation, target_name in db.execute("SELECT document_id,source_name,relation,target_name FROM document_relations ORDER BY document_id"):
+            relation_provenance.setdefault((source_name, relation, target_name), []).append({"document_id": doc_id})
+    except Exception as exc:
+        if "no such table" not in str(exc):
+            raise
+
     edges = []
     seen = set()
     for source, relation, target, confidence in db.execute(
@@ -77,6 +85,9 @@ def write_graph(db, root):
             "target": target_ids[0],
             "confidence": confidence,
         }
+        provenance = relation_provenance.get((source, relation, target), [])
+        if provenance:
+            edge["provenance"] = provenance
         evidence = evidence_map.get((source, relation, target), [])
         if evidence:
             edge["evidence"] = evidence
@@ -86,7 +97,7 @@ def write_graph(db, root):
             edges.append(edge)
 
     payload = {
-        "schema_version": "3",
+        "schema_version": "4",
         "nodes": list(nodes.values()),
         "edges": edges,
     }
