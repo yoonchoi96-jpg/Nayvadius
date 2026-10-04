@@ -105,3 +105,19 @@ def write_vocabulary_moc(db, root):
         levels = ", ".join(x for x in (hsk_levels or "").split("|") if x) or "unclassified"
         lines.append(f"- [[{word}]] — {pinyin or '-'} — {levels}")
     write_atomic(root / "_Vocabulary Index.md", "\n".join(lines) + "\n")
+
+
+def write_hsk_mocs(db, root):
+    root = Path(root) / "vocabulary"
+    groups = [("HSK6", {"6"}), ("HSK7-9", {"7", "8", "9", "7-9"})]
+    for label, wanted in groups:
+        rows = []
+        for row in db.execute("SELECT word,pinyin,hsk_levels FROM vocabularies ORDER BY word"):
+            levels = set(x for x in (row[2] or "").split("|") if x)
+            if levels & wanted:
+                rows.append(row)
+        folder = root / label
+        folder.mkdir(parents=True, exist_ok=True)
+        lines = ["---", f'title: "{label} Vocabulary"', 'type: "MOC"', "---", "", f"# {label} Vocabulary", ""]
+        lines.extend(f"- [[{word}]] — {pinyin or '-'}" for word, pinyin, _ in rows)
+        write_atomic(folder / "_Index.md", "\n".join(lines) + "\n")
