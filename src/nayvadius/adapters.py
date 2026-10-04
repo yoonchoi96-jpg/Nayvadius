@@ -169,3 +169,59 @@ def load_abel(path: str) -> list[Vocabulary]:
 
 def load_documents(adapter: DocumentAdapter) -> list[Document]:
     return adapter.load()
+
+
+def parse_jacques_track(raw: dict) -> ProcessedDocument:
+    if not isinstance(raw, dict):
+        raise ValueError("Jacques track must be an object")
+    track_id = str(raw.get("track_id") or "").strip()
+    title = str(raw.get("title") or "").strip()
+    if not track_id or not title:
+        raise ValueError("Jacques track requires track_id and title")
+    artists = [x.strip() for x in str(raw.get("artists") or "").split(",") if x.strip()]
+    album = str(raw.get("album") or "").strip()
+    content_parts = [
+        f"Track: {title}",
+        f"Artists: {', '.join(artists)}" if artists else "",
+        f"Album: {album}" if album else "",
+        f"Release date: {raw.get('release_date') or ''}",
+        f"Spotify URL: {raw.get('spotify_url') or ''}",
+    ]
+    for key in ("audio_features", "enrichment", "analysis", "editorial"):
+        value = raw.get(key)
+        if value not in (None, "", [], {}):
+            content_parts.append(f"{key}: {json.dumps(value, ensure_ascii=False, sort_keys=True)}")
+    content = "\n".join(x for x in content_parts if x)
+    entities = []
+    for artist in artists:
+        entities.append(Entity(artist, "People", 1.0, ()))
+    if album:
+        entities.append(Entity(album, "Products", 1.0, ()))
+    entities.append(Entity(title, "Products", 1.0, ()))
+    relations = [Relation(artist, "performed", title, 1.0) for artist in artists]
+    if album:
+        relations.append(Relation(title, "part_of", album, 1.0))
+    metadata = {
+        "jacques": {k: v for k, v in raw.items() if k not in {"track_id", "title", "artists", "album", "release_date", "spotify_url"}}
+    }
+    doc = Document(track_id, title, content, "jacques", metadata)
+    return ProcessedDocument(
+        doc,
+        f"{title} — {', '.join(artists)}" if artists else title,
+        entities,
+        ["source/jacques", "domain/music"],
+        [],
+        relations,
+        0.5,
+        "music_track",
+        "",
+    )
+
+
+def load_jacques_json(path: str) -> list[ProcessedDocument]:
+    with open(path, encoding="utf-8") as handle:
+        payload = json.load(handle)
+    tracks = payload.get("tracks", []) if isinstance(payload, dict) else payload
+    if not isinstance(tracks, list):
+        raise ValueError("Jacques JSON requires a tracks list")
+    return [parse_jacques_track(track) for track in tracks]
