@@ -84,3 +84,18 @@ def test_abel_source_provenance_and_document_linking():
         ).fetchone()
     assert source == ("L6-0002", "abel")
     assert link == ("L6-0002", "exact")
+
+
+def test_vocabulary_matcher_avoids_short_false_positives():
+    from nayvadius.vocabulary_matcher import VocabularyMatcher
+    matcher = VocabularyMatcher([
+        ("1", "人工智能", ""),
+        ("2", "人工", ""),
+        ("3", "a", ""),
+        ("4", "AI", ""),
+    ])
+    found = matcher.match("人工智能正在改变AI产业。")
+    assert "1" in found
+    assert "2" in found
+    assert "3" not in found
+    assert "4" not in found
