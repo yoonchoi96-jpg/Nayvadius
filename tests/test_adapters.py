@@ -30,3 +30,26 @@ def test_load_abraham_jsonl_preserves_enrichment(tmp_path: Path):
     assert result.relations[0].source == "Apple"
     assert result.translation_ko == "원문"
     assert result.document.metadata["readwise_id"] == "rw-1"
+
+
+def test_load_jacques_json_creates_music_graph(tmp_path: Path):
+    from nayvadius.adapters import load_jacques_json
+    p = tmp_path / "jacques.json"
+    p.write_text(json.dumps({
+        "tracks": [{
+            "track_id": "track-1",
+            "title": "Example Song",
+            "artists": "Artist A, Artist B",
+            "album": "Example Album",
+            "release_date": "2026-01-01",
+            "spotify_url": "https://open.spotify.com/track/track-1",
+            "analysis": {"bpm": 100}
+        }]
+    }, ensure_ascii=False), encoding="utf-8")
+    result = load_jacques_json(str(p))[0]
+    assert result.document.source == "jacques"
+    assert {e.name for e in result.entities} == {"Artist A", "Artist B", "Example Album", "Example Song"}
+    assert ("Artist A", "performed", "Example Song") == (
+        result.relations[0].source, result.relations[0].relation, result.relations[0].target
+    )
+    assert "analysis" in result.document.content
