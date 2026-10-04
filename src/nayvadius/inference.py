@@ -160,7 +160,7 @@ def derive_cross_domain_links(db=None):
               AND te.entity_type='MusicTracks'
             GROUP BY av.entity_name,av.entity_type,av.vocabulary_id,
                      av.abraham_document_id,jtrack.document_id,
-                     jtrack.target_name,jtrack.target_type"""
+                     jtrack.target_name"""
     ).fetchall()
 
     for (entity_name, entity_type, vocabulary_id, confidence,
