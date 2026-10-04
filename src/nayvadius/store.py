@@ -131,6 +131,15 @@ def save_result(result):
                 "INSERT OR REPLACE INTO document_entities VALUES(?,?,?,?)",
                 (result.document.id, name, e.entity_type, e.confidence),
             )
+            vocab_rows = db.execute(
+                "SELECT id,word,traditional FROM vocabularies WHERE word=? OR traditional=?",
+                (name, name),
+            ).fetchall()
+            for vocabulary_id, word, traditional in vocab_rows:
+                db.execute(
+                    "INSERT OR REPLACE INTO entity_vocabulary_links VALUES(?,?,?,?,?)",
+                    (name, e.entity_type, vocabulary_id, "exact", 1.0),
+                )
 
         for x in result.relations:
             source = canonical.get(x.source) or _resolve_relation_endpoint(db, x.source)
