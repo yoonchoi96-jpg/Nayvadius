@@ -20,7 +20,7 @@ def main() -> None:
 
     if args.command == "qa":
         report = audit_database(args.db)
-        report_path = f"{args.output.rstrip("/")}/qa_report.json"
+        report_path = str(args.output).rstrip("/") + "/qa_report.json"
         write_report(report, report_path)
         print(json.dumps(report, ensure_ascii=False, indent=2))
         if report["status"] == "FAIL":
