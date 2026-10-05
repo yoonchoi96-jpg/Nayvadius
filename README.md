@@ -159,6 +159,9 @@ The QA gate checks:
 
 - canonical entity ontology and confidence ranges
 - ambiguous alias collisions (warning; never auto-merged)
+- orphan entity/source, vocabulary/source, and cross-domain links
+- derived relation and source-bridge endpoints
+- vocabulary-link and derived-graph confidence ranges
 - orphan document/entity and document/relation links
 - relation endpoint existence, naming, self-loops, and confidence
 - relation-evidence provenance and evidence status
