@@ -25,3 +25,15 @@ def test_obsidian_audit_reports_unresolved_links_as_warning(tmp_path: Path):
     report = audit_vault(root)
     assert report["status"] == "PASS"
     assert report["warnings"][0]["kind"] == "unresolved_wikilink"
+
+
+def test_entity_merge_plan_detects_same_normalized_name(tmp_path: Path):
+    from nayvadius.obsidian_audit import build_entity_merge_plan
+    root = tmp_path / "vault"
+    (root / "entities" / "People").mkdir(parents=True)
+    (root / "entities" / "People" / "David Bowie.md").write_text("# David Bowie\n", encoding="utf-8")
+    (root / "entities" / "People" / "David  Bowie.md").write_text("# David Bowie\n", encoding="utf-8")
+    plan = build_entity_merge_plan(root)
+    assert plan["status"] == "REVIEW"
+    assert plan["candidate_count"] == 1
+    assert plan["candidates"][0]["action"] == "REVIEW"
