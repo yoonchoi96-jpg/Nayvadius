@@ -167,7 +167,7 @@ def test_relation_and_save_result_integration(tmp_path, monkeypatch):
 
 def test_alias_persistence_and_relation_semantics(tmp_path, monkeypatch):
     monkeypatch.setattr("nayvadius.config.settings.state_path", str(tmp_path / "state.db"))
-    _save("1", [Entity("David Bowie", "People", 0.9, ("Bowie",))])
+    _save("1", [Entity("David Bowie", "People", 0.9, ("Bowie", "David Robert Jones"))])
     _save("2", [Entity("David Robert Jones", "People", 0.9, ("Ziggy Stardust",)), Entity("Brian Eno", "People", 0.9, ())],
           [Relation("David Robert Jones", "collaborated_with", "Brian Eno")])
     with connect() as db:
