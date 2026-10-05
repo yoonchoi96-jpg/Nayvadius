@@ -16,6 +16,7 @@ def main() -> None:
     parser.add_argument("--source", choices=["jsonl", "abraham", "abel", "jacques"], default="abraham")
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--apply", action="store_true", default=False)
     parser.add_argument("--max-attempts", type=int, default=5)
     args = parser.parse_args()
 
