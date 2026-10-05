@@ -4,11 +4,12 @@ from .engine import Engine
 from .db import status, failed_document_ids
 from .qa import audit_database, write_report
 from .adapters import load_abraham_jsonl, load_abel, load_jacques_json
+from .obsidian_audit import audit_vault, write_audit_report
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="nayvadius")
-    parser.add_argument("command", choices=["status", "process", "retry-failed", "qa"])
+    parser.add_argument("command", choices=["status", "process", "retry-failed", "qa", "obsidian-audit"])
     parser.add_argument("--input", default="data/input.jsonl")
     parser.add_argument("--db", default="data/nayvadius.db")
     parser.add_argument("--output", default="output")
@@ -17,6 +18,15 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--max-attempts", type=int, default=5)
     args = parser.parse_args()
+
+    if args.command == "obsidian-audit":
+        report = audit_vault(args.output)
+        report_path = str(args.output).rstrip("/") + "/obsidian_audit_report.json"
+        write_audit_report(report, report_path)
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        if report["status"] == "FAIL":
+            raise SystemExit(1)
+        return
 
     if args.command == "qa":
         report = audit_database(args.db)
