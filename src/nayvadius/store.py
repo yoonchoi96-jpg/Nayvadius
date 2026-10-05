@@ -5,36 +5,72 @@ from .vocabulary_matcher import VocabularyMatcher
 import json
 import re
 import hashlib
+import unicodedata
 
 def _norm_alias(value):
     value = str(value or "").strip().casefold()
     return re.sub(r"[\s\u3000]+", " ", value)
+
+
+def _norm_entity_name(value):
+    value = unicodedata.normalize("NFKC", str(value or "")).casefold()
+    return " ".join(
+        "".join(char if char.isalnum() else " " for char in value).split()
+    )
+
 
 def _canonical_entity(db, entity):
     """Resolve to an existing canonical name within the same entity_type.
 
     Unique match -> canonical name; ambiguous or no match -> incoming name.
     """
-    candidates = set()
-    norms = set()
-    for value in [entity.name, *entity.aliases]:
+    if db.execute(
+        "SELECT 1 FROM entities WHERE name=? AND entity_type=?",
+        (entity.name, entity.entity_type),
+    ).fetchone():
+        return entity.name
+
+    values = [entity.name, *entity.aliases]
+    exact_aliases = set()
+    for value in values:
         alias = _norm_alias(value)
-        if not alias:
-            continue
-        norms.add(alias)
-        for (canonical_name,) in db.execute(
-            "SELECT canonical_name FROM entity_aliases WHERE alias=? AND entity_type=?",
-            (alias, entity.entity_type),
-        ).fetchall():
-            candidates.add(canonical_name)
-    if norms:
-        for (name,) in db.execute(
-            "SELECT name FROM entities WHERE entity_type=?", (entity.entity_type,)
-        ).fetchall():
-            if _norm_alias(name) in norms:
-                candidates.add(name)
-    if len(candidates) == 1:
-        return next(iter(candidates))
+        if alias:
+            exact_aliases.update(
+                row[0] for row in db.execute(
+                    "SELECT canonical_name FROM entity_aliases "
+                    "WHERE alias=? AND entity_type=?",
+                    (alias, entity.entity_type),
+                )
+            )
+    if len(exact_aliases) == 1:
+        return next(iter(exact_aliases))
+    if len(exact_aliases) > 1:
+        return entity.name
+
+    normalized_values = {_norm_entity_name(value) for value in values}
+    normalized_values.discard("")
+    exact_names = {
+        name for (name,) in db.execute(
+            "SELECT name FROM entities WHERE entity_type=?",
+            (entity.entity_type,),
+        )
+        if _norm_entity_name(name) in normalized_values
+    }
+    if len(exact_names) == 1:
+        return next(iter(exact_names))
+    if len(exact_names) > 1:
+        return entity.name
+
+    normalized_aliases = {
+        canonical_name
+        for alias, canonical_name in db.execute(
+            "SELECT alias,canonical_name FROM entity_aliases WHERE entity_type=?",
+            (entity.entity_type,),
+        )
+        if _norm_entity_name(alias) in normalized_values
+    }
+    if len(normalized_aliases) == 1:
+        return next(iter(normalized_aliases))
     return entity.name
 
 def _merge_aliases(db, canonical_name, entity_type, aliases):

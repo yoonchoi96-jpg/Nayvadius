@@ -180,3 +180,24 @@ and downstream consistency of the canonical knowledge graph.
 ## Architecture audit
 
 See [NAYVADIUS INITIAL AUDIT](docs/nayvadius_initial_audit.md) for the repository-grounded schema, processing, graph, output, workflow, and gap inventory.
+
+## Obsidian maintenance
+
+Vault maintenance is read-only by default:
+
+```bash
+python -m nayvadius.cli obsidian-audit --output /path/to/vault --db data/nayvadius.db
+python -m nayvadius.cli obsidian-normalize --output /path/to/vault
+python -m nayvadius.cli obsidian-normalize --output /path/to/vault --apply
+python -m nayvadius.cli entity-merge-plan --output /path/to/vault
+python -m nayvadius.cli entity-merge-apply --output /path/to/vault --db data/nayvadius.db
+python -m nayvadius.cli entity-merge-apply --output /path/to/vault --db data/nayvadius.db --apply
+python -m nayvadius.cli maintenance --output /path/to/vault --db data/nayvadius.db
+```
+
+Merge plans separate `AUTO`, `REVIEW`, and `SKIP` candidates. Only `AUTO` candidates
+can be applied, and only when `--apply` is explicitly provided. Changed notes are
+backed up under `.nayvadius-backup/` with a hash and operation manifest; original
+vault files are never permanently discarded. The maintenance command writes
+`nayvadius_maintenance_report.json` and compares entity files, links, provenance,
+aliases, and relation endpoints with the SQLite database.

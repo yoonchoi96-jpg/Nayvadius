@@ -216,7 +216,7 @@ def log_entity_merge(canonical_name, duplicate_name, entity_type, reason):
  with connect() as db:
   db.execute("INSERT INTO entity_merge_log(canonical_name,duplicate_name,entity_type,reason) VALUES(?,?,?,?)",(canonical_name,duplicate_name,entity_type,reason))
 
-def merge_entity(canonical_name, duplicate_name, entity_type, reason="explicit"):
+def merge_entity(canonical_name, duplicate_name, entity_type, reason="explicit", db_path=None):
     """Conservatively merge same-type entities and retain an audit trail."""
     if not canonical_name or not duplicate_name or not entity_type:
         return False
@@ -225,7 +225,7 @@ def merge_entity(canonical_name, duplicate_name, entity_type, reason="explicit")
     if reason not in ("explicit", "exact_name", "explicit_alias", "provenance_alias"):
         raise ValueError("invalid entity merge reason: " + str(reason))
 
-    with connect() as db:
+    with connect(db_path) as db:
         keep = db.execute(
             "SELECT aliases,confidence FROM entities WHERE name=? AND entity_type=?",
             (canonical_name, entity_type),
@@ -367,7 +367,8 @@ def merge_entity(canonical_name, duplicate_name, entity_type, reason="explicit")
             )
 
         db.execute(
-            "UPDATE OR IGNORE entity_sources SET entity_name=? "
+            "INSERT OR IGNORE INTO entity_sources(entity_name,entity_type,source,document_id) "
+            "SELECT ?,entity_type,source,document_id FROM entity_sources "
             "WHERE entity_name=? AND entity_type=?",
             (canonical_name, duplicate_name, entity_type),
         )

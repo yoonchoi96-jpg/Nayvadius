@@ -175,3 +175,29 @@ def test_alias_persistence_and_relation_semantics(tmp_path, monkeypatch):
         rel = db.execute("SELECT source_name,relation,target_name FROM document_relations WHERE document_id='2'").fetchone()
     assert "Ziggy Stardust" in row[1] and "Bowie" in row[1]
     assert rel == ("David Bowie", "collaborated_with", "Brian Eno")
+
+
+def test_unicode_and_punctuation_normalized_entity_names(tmp_path, monkeypatch):
+    monkeypatch.setattr("nayvadius.config.settings.state_path", str(tmp_path / "state.db"))
+    _save("1", [Entity("AC/DC", "Organizations", 0.9, ())])
+    _save("2", [Entity("ＡＣ／ＤＣ", "Organizations", 0.8, ())])
+    with connect() as db:
+        names = db.execute(
+            "SELECT name FROM entities WHERE entity_type='Organizations'"
+        ).fetchall()
+    assert names == [("AC/DC",)]
+
+
+def test_exact_canonical_name_precedes_conflicting_alias_candidate(tmp_path, monkeypatch):
+    monkeypatch.setattr("nayvadius.config.settings.state_path", str(tmp_path / "state.db"))
+    _save("1", [Entity("Apple Inc.", "Organizations", 0.9, ("Apple",))])
+    _save("2", [Entity("Apple Music", "Organizations", 0.9, ("Apple Music",))])
+    _save("3", [Entity("Apple Inc.", "Organizations", 1.0, ("Apple Music",))])
+    assert _names() == ["Apple Inc.", "Apple Music"]
+
+
+def test_explicit_alias_resolves_entity_name_variant(tmp_path, monkeypatch):
+    monkeypatch.setattr("nayvadius.config.settings.state_path", str(tmp_path / "state.db"))
+    _save("1", [Entity("The Beatles", "People", 0.9, ("Beatles",))])
+    _save("2", [Entity("Beatles", "People", 0.9, ())])
+    assert _names() == ["The Beatles"]
