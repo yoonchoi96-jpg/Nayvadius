@@ -47,3 +47,30 @@ def write_audit_report(report, path):
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def normalize_vault(root, apply=False):
+    """Plan/apply safe Obsidian filename/link normalization.
+
+    Only exact, unambiguous wikilinks are rewritten. No entity is deleted or
+    merged automatically; ambiguous cases remain warnings for human review.
+    """
+    root = Path(root)
+    report = audit_vault(root)
+    changes = []
+    for warning in report["warnings"]:
+        if warning.get("kind") != "unresolved_wikilink":
+            continue
+        target = warning["target"]
+        candidates = [p for p in _iter_markdown(root) if p.stem.casefold() == target.casefold()]
+        if len(candidates) != 1:
+            continue
+        path = root / warning["file"]
+        text = path.read_text(encoding="utf-8")
+        pattern = re.compile(r"\\[\\[" + re.escape(target) + r"\\]\\]", re.IGNORECASE)
+        new_text, count = pattern.subn("[[" + candidates[0].stem + "]]", text)
+        if count and new_text != text:
+            changes.append({"file": warning["file"], "target": target, "replacement": candidates[0].stem, "count": count})
+            if apply:
+                path.write_text(new_text, encoding="utf-8")
+    return {"applied": apply, "changes": changes, "audit_before": report}
