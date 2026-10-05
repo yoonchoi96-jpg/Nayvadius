@@ -98,3 +98,80 @@ def test_failure_queue_is_bounded_and_clears_on_success(tmp_path: Path, monkeypa
     clear_failure("bad-1")
     with connect() as db:
         assert db.execute("SELECT * FROM processing_failures").fetchall() == []
+
+
+def _save(doc_id, entities, relations=()):
+    r = ProcessedDocument(Document(doc_id, doc_id, doc_id), doc_id, list(entities), ["source/test"], relations=list(relations))
+    upsert_document(r.document); save_result(r)
+
+
+def _names(etype=None):
+    with connect() as db:
+        return [r[0] for r in db.execute("SELECT name FROM entities ORDER BY name").fetchall()]
+
+
+def _bowie(tmp_path, monkeypatch):
+    monkeypatch.setattr("nayvadius.config.settings.state_path", str(tmp_path / "state.db"))
+    _save("1", [Entity("David Bowie", "People", 0.9, ("David Robert Jones", "Bowie"))])
+
+
+def test_alias_canonicalization(tmp_path, monkeypatch):
+    _bowie(tmp_path, monkeypatch)
+    _save("2", [Entity("David Robert Jones", "People", 0.9, ())])
+    assert _names() == ["David Bowie"]
+
+
+def test_case_insensitive_and_whitespace_exact_name(tmp_path, monkeypatch):
+    monkeypatch.setattr("nayvadius.config.settings.state_path", str(tmp_path / "state.db"))
+    _save("1", [Entity("David Bowie", "People", 0.9, ())])
+    _save("2", [Entity("david bowie", "People", 0.9, ())])
+    _save("3", [Entity("David  Bowie", "People", 0.9, ())])
+    _save("4", [Entity("DAVID BOWIE", "People", 0.9, ())])
+    assert _names() == ["David Bowie"]
+
+
+def test_entity_type_isolation(tmp_path, monkeypatch):
+    monkeypatch.setattr("nayvadius.config.settings.state_path", str(tmp_path / "state.db"))
+    _save("1", [Entity("Apple", "Organizations", 0.9, ())])
+    _save("2", [Entity("apple", "Products", 0.9, ())])
+    with connect() as db:
+        rows = db.execute("SELECT name,entity_type FROM entities ORDER BY entity_type").fetchall()
+    assert rows == [("Apple", "Organizations"), ("apple", "Products")]
+
+
+def test_ambiguous_alias_keeps_incoming_name(tmp_path, monkeypatch):
+    monkeypatch.setattr("nayvadius.config.settings.state_path", str(tmp_path / "state.db"))
+    _save("1", [Entity("Apple Inc.", "Organizations", 0.9, ()), Entity("Apple Music", "Organizations", 0.9, ())])
+    with connect() as db:
+        db.execute("INSERT INTO entity_aliases VALUES('x alias','Apple Inc.','Organizations')")
+        db.execute("INSERT INTO entity_aliases VALUES('y alias','Apple Music','Organizations')")
+    _save("2", [Entity("New Thing", "Organizations", 0.9, ("X Alias", "Y Alias"))])
+    assert "New Thing" in _names()
+
+
+def test_relation_and_save_result_integration(tmp_path, monkeypatch):
+    _bowie(tmp_path, monkeypatch)
+    _save("2", [Entity("David Robert Jones", "People", 0.9, ("David Bowie",)), Entity("Berlin", "Places", 0.9, ())],
+          [Relation("David Robert Jones", "lived_in", "Berlin")])
+    _save("3", [Entity("Berlin", "Places", 0.9, ())], [Relation("Bowie", "visited", "Berlin")])
+    with connect() as db:
+        rels = db.execute("SELECT source_name,relation,target_name FROM relations ORDER BY relation").fetchall()
+        docs = db.execute("SELECT entity_name FROM document_entities WHERE document_id='2' AND entity_type='People'").fetchall()
+        aliases = {r[0] for r in db.execute("SELECT alias FROM entity_aliases WHERE canonical_name='David Bowie'")}
+        src = db.execute("SELECT entity_name FROM entity_sources WHERE document_id='2' AND entity_type='People'").fetchall()
+    assert rels == [("David Bowie", "lived_in", "Berlin"), ("David Bowie", "visited", "Berlin")]
+    assert docs == [("David Bowie",)] and src == [("David Bowie",)]
+    assert {"bowie", "david robert jones", "david bowie"} <= aliases
+    assert "David Robert Jones" not in _names()
+
+
+def test_alias_persistence_and_relation_semantics(tmp_path, monkeypatch):
+    monkeypatch.setattr("nayvadius.config.settings.state_path", str(tmp_path / "state.db"))
+    _save("1", [Entity("David Bowie", "People", 0.9, ("Bowie", "David Robert Jones"))])
+    _save("2", [Entity("David Robert Jones", "People", 0.9, ("Ziggy Stardust",)), Entity("Brian Eno", "People", 0.9, ())],
+          [Relation("David Robert Jones", "collaborated_with", "Brian Eno")])
+    with connect() as db:
+        row = db.execute("SELECT name,aliases FROM entities WHERE name='David Bowie'").fetchone()
+        rel = db.execute("SELECT source_name,relation,target_name FROM document_relations WHERE document_id='2'").fetchone()
+    assert "Ziggy Stardust" in row[1] and "Bowie" in row[1]
+    assert rel == ("David Bowie", "collaborated_with", "Brian Eno")

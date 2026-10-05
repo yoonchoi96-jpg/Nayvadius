@@ -1,0 +1,85 @@
+from pathlib import Path
+from nayvadius.obsidian_audit import audit_vault
+
+def test_obsidian_audit_passes_canonical_vault(tmp_path: Path):
+    root = tmp_path / "vault"
+    (root / "entities" / "People").mkdir(parents=True)
+    (root / "entities" / "People" / "Taylor Swift.md").write_text("# Taylor Swift\\n", encoding="utf-8")
+    (root / "_Knowledge Index.md").write_text("- [[Taylor Swift]]\\n", encoding="utf-8")
+    report = audit_vault(root)
+    assert report["status"] == "PASS"
+    assert report["errors"] == []
+
+def test_obsidian_audit_rejects_legacy_entity_domain(tmp_path: Path):
+    root = tmp_path / "vault"
+    (root / "entities" / "Companies").mkdir(parents=True)
+    (root / "entities" / "Companies" / "Apple.md").write_text("# Apple\\n", encoding="utf-8")
+    report = audit_vault(root)
+    assert report["status"] == "FAIL"
+    assert any("legacy/unknown entity domain" in x for x in report["errors"])
+
+def test_obsidian_audit_reports_unresolved_links_as_warning(tmp_path: Path):
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "note.md").write_text("See [[Missing Entity]].\\n", encoding="utf-8")
+    report = audit_vault(root)
+    assert report["status"] == "PASS"
+    assert report["warnings"][0]["kind"] == "unresolved_wikilink"
+
+
+def test_entity_merge_plan_detects_same_normalized_name(tmp_path: Path):
+    from nayvadius.obsidian_audit import build_entity_merge_plan
+    root = tmp_path / "vault"
+    (root / "entities" / "People").mkdir(parents=True)
+    (root / "entities" / "People" / "David Bowie.md").write_text("# David Bowie\n", encoding="utf-8")
+    (root / "entities" / "People" / "David  Bowie.md").write_text("# David Bowie\n", encoding="utf-8")
+    plan = build_entity_merge_plan(root)
+    assert plan["status"] == "REVIEW"
+    assert plan["candidate_count"] == 1
+    assert plan["candidates"][0]["action"] == "REVIEW"
+
+
+def test_entity_merge_apply_keeps_canonical_and_backs_up_duplicate(tmp_path: Path):
+    from nayvadius.obsidian_audit import build_entity_merge_plan, apply_entity_merge_plan
+    root = tmp_path / "vault"
+    people = root / "entities" / "People"
+    people.mkdir(parents=True)
+    (people / "David Bowie.md").write_text("# canonical\n", encoding="utf-8")
+    (people / "David  Bowie.md").write_text("# duplicate\n", encoding="utf-8")
+    note = root / "note.md"
+    note.write_text("[[David  Bowie]]\n", encoding="utf-8")
+
+    plan = build_entity_merge_plan(root)
+    result = apply_entity_merge_plan(root, plan)
+    assert result["status"] == "APPLIED"
+    assert (people / "David Bowie.md").exists()
+    assert not (people / "David  Bowie.md").exists()
+    assert (root / ".nayvadius-backup" / "entities" / "People" / "David  Bowie.md").exists()
+    assert note.read_text(encoding="utf-8") == "[[David Bowie]]\n"
+
+
+def test_normalize_dry_run_does_not_modify_and_apply_rewrites(tmp_path: Path):
+    from nayvadius.obsidian_audit import normalize_vault
+    root = tmp_path / "vault"
+    people = root / "entities" / "People"
+    people.mkdir(parents=True)
+    (people / "David Bowie.md").write_text("# x\n", encoding="utf-8")
+    note = root / "note.md"
+    note.write_text("[[david bowie]] [[Unrelated]]\n", encoding="utf-8")
+    dry = normalize_vault(root)
+    assert dry["applied"] is False and dry["changes"]
+    assert note.read_text(encoding="utf-8") == "[[david bowie]] [[Unrelated]]\n"
+    done = normalize_vault(root, apply=True)
+    assert done["applied"] is True
+    assert note.read_text(encoding="utf-8") == "[[David Bowie]] [[Unrelated]]\n"
+
+
+def test_cli_exposes_apply_flag(capsys):
+    import sys
+    from nayvadius import cli
+    sys.argv = ["nayvadius", "obsidian-normalize", "--help"]
+    try:
+        cli.main()
+    except SystemExit:
+        pass
+    assert "--apply" in capsys.readouterr().out
