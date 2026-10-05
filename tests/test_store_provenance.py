@@ -20,5 +20,6 @@ def test_reprocessing_removes_stale_entity_provenance(tmp_path: Path, monkeypatc
     save_result(second)
 
     with connect(db_path) as db:
+        assert db.execute("SELECT content FROM documents WHERE id='d1'").fetchone() == ("content",)
         assert db.execute("SELECT entity_name FROM entity_sources ORDER BY entity_name").fetchall() == [("New Person",)]
         assert db.execute("SELECT entity_name FROM document_entities ORDER BY entity_name").fetchall() == [("New Person",)]

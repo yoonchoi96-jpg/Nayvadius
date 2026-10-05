@@ -86,6 +86,50 @@ def test_abel_source_provenance_and_document_linking():
     assert link == ("L6-0002", "exact")
 
 
+def test_new_vocabulary_relinks_existing_document_content(tmp_path, monkeypatch):
+    from nayvadius.db import connect
+    from nayvadius.engine import Engine
+    from nayvadius.models import Document
+    from nayvadius.store import upsert_document
+
+    monkeypatch.setattr("nayvadius.config.settings.state_path", str(tmp_path / "state.db"))
+    upsert_document(Document("abraham-2", "AI", "人工智能改变产业。", source="abraham"))
+
+    stats = Engine(tmp_path / "output").run_vocabulary([
+        Vocabulary(id="L6-0003", word="人工智能", source="abel"),
+    ])
+
+    with connect() as db:
+        assert db.execute(
+            "SELECT vocabulary_id FROM document_vocabulary_links WHERE document_id='abraham-2'"
+        ).fetchall() == [("L6-0003",)]
+    assert stats["document_vocabulary_links"] == 1
+
+
+def test_vocabulary_sync_preserves_links_for_legacy_documents_without_content(tmp_path, monkeypatch):
+    from nayvadius.db import connect
+    from nayvadius.engine import Engine
+
+    monkeypatch.setattr("nayvadius.config.settings.state_path", str(tmp_path / "state.db"))
+    with connect() as db:
+        db.execute(
+            "INSERT INTO documents(id,title,content_hash,source,status) "
+            "VALUES('legacy-doc','Old','hash','abraham','done')"
+        )
+        db.execute(
+            "INSERT INTO document_vocabulary_links VALUES('legacy-doc','old-vocab','explicit',1.0)"
+        )
+
+    Engine(tmp_path / "output").run_vocabulary([
+        Vocabulary(id="new-vocab", word="新词", source="abel"),
+    ])
+
+    with connect() as db:
+        assert db.execute(
+            "SELECT vocabulary_id FROM document_vocabulary_links WHERE document_id='legacy-doc'"
+        ).fetchall() == [("old-vocab",)]
+
+
 def test_vocabulary_matcher_avoids_short_false_positives():
     from nayvadius.vocabulary_matcher import VocabularyMatcher
     matcher = VocabularyMatcher([

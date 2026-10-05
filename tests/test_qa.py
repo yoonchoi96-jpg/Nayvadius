@@ -80,6 +80,80 @@ def test_alias_collision_is_warning_not_failure(tmp_path: Path):
     assert report["findings"][0]["rule"] == "alias.ambiguous"
 
 
+def test_orphan_alias_fails_qa(tmp_path: Path):
+    path = tmp_path / "qa.db"
+    db = _db(path)
+    db.execute("INSERT INTO entity_aliases VALUES('orphan','Missing Entity','Concepts')")
+    db.commit()
+    db.close()
+
+    report = audit_database(path)
+    assert report["status"] == "FAIL"
+    assert "alias.orphan" in {finding["rule"] for finding in report["findings"]}
+
+
+def test_qa_validates_provenance_and_cross_domain_graph_links(tmp_path: Path):
+    path = tmp_path / "qa.db"
+    db = _db(path)
+    db.execute("INSERT INTO entities VALUES('Taylor Swift','People','',1.0)")
+    db.execute("INSERT INTO documents VALUES('d1','Doc','h','abraham','ok','now')")
+    db.execute(
+        "INSERT INTO entity_sources VALUES('Missing Entity','People','jacques','missing-doc')"
+    )
+    db.execute(
+        "INSERT INTO entity_vocabulary_links VALUES('Taylor Swift','People','missing-vocab','exact',1.2)"
+    )
+    db.execute(
+        "INSERT INTO document_vocabulary_links VALUES('missing-doc','missing-vocab','exact',-0.1)"
+    )
+    db.execute(
+        "INSERT INTO vocabulary_sources VALUES('missing-vocab','source-1','abel','{}')"
+    )
+    db.executescript("""
+    CREATE TABLE derived_relations(
+        source_name TEXT,relation TEXT,target_name TEXT,confidence REAL,
+        rule TEXT,provenance TEXT
+    );
+    CREATE TABLE cross_domain_links(
+        left_name TEXT,left_type TEXT,right_id TEXT,right_kind TEXT,
+        confidence REAL,rule TEXT,provenance TEXT
+    );
+    CREATE TABLE source_bridge_links(
+        entity_name TEXT,entity_type TEXT,source_a TEXT,source_b TEXT,
+        confidence REAL,rule TEXT,provenance TEXT
+    );
+    """)
+    db.execute(
+        "INSERT INTO derived_relations VALUES('Taylor Swift','derived_to','Missing',1.5,'r','[]')"
+    )
+    db.execute(
+        "INSERT INTO cross_domain_links VALUES('Taylor Swift','People','missing-vocab','vocabulary',1.4,'r','{}')"
+    )
+    db.execute(
+        "INSERT INTO source_bridge_links VALUES('Missing Entity','People','abel','abel',-1,'r','{}')"
+    )
+    db.commit()
+    db.close()
+
+    report = audit_database(path)
+    rules = {finding["rule"] for finding in report["findings"]}
+    assert report["status"] == "FAIL"
+    assert {
+        "entity_source.orphan",
+        "entity_vocabulary.orphan",
+        "entity_vocabulary.confidence_range",
+        "document_vocabulary.orphan",
+        "document_vocabulary.confidence_range",
+        "vocabulary_source.orphan",
+        "derived_relation.orphan_endpoint",
+        "derived_relation.confidence_range",
+        "cross_domain_link.orphan_endpoint",
+        "cross_domain_link.confidence_range",
+        "source_bridge.invalid_endpoint",
+        "source_bridge.confidence_range",
+    } <= rules
+
+
 def test_report_is_json(tmp_path: Path):
     path = tmp_path / "qa.db"
     db = _db(path)

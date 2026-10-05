@@ -4,6 +4,29 @@ from pathlib import Path
 from nayvadius.db import connect
 
 
+def test_legacy_document_schema_adds_content_column_without_losing_rows(tmp_path: Path):
+    db_path = tmp_path / "legacy.db"
+    db = sqlite3.connect(db_path)
+    db.execute(
+        "CREATE TABLE documents(id TEXT PRIMARY KEY,title TEXT NOT NULL,"
+        "content_hash TEXT NOT NULL,source TEXT NOT NULL,status TEXT NOT NULL,"
+        "updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+    )
+    db.execute(
+        "INSERT INTO documents(id,title,content_hash,source,status) "
+        "VALUES('doc-1','Title','hash','abraham','done')"
+    )
+    db.commit()
+    db.close()
+
+    with connect(db_path) as db:
+        columns = {row[1] for row in db.execute("PRAGMA table_info(documents)")}
+        assert "content" in columns
+        assert db.execute(
+            "SELECT id,title,content FROM documents"
+        ).fetchall() == [("doc-1", "Title", "")]
+
+
 def test_legacy_company_brand_migration_preserves_links_and_provenance(tmp_path: Path):
     db_path = tmp_path / "legacy.db"
     db = sqlite3.connect(db_path)

@@ -61,3 +61,23 @@ def test_entity_merge_preserves_existing_document_link_confidence(tmp_path: Path
         "SELECT document_id,entity_name,confidence FROM document_entities"
     ).fetchall() == [("d1", "Canonical", 0.8)]
     db.close()
+
+
+def test_entity_merge_preserves_overlapping_source_provenance(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("nayvadius.config.settings.state_path", str(tmp_path / "state.db"))
+    db_path = tmp_path / "state.db"
+    with connect(db_path) as db:
+        db.execute("INSERT INTO entities VALUES(?,?,?,?)", ("Acme Inc.", "Organizations", "", 0.9))
+        db.execute("INSERT INTO entities VALUES(?,?,?,?)", ("Acme", "Organizations", "", 0.8))
+        db.execute(
+            "INSERT INTO documents(id,title,content_hash,source,status) VALUES(?,?,?,?,?)",
+            ("d1", "doc", "h", "abraham", "done"),
+        )
+        db.execute("INSERT INTO entity_sources VALUES(?,?,?,?)", ("Acme Inc.", "Organizations", "abraham", "d1"))
+        db.execute("INSERT INTO entity_sources VALUES(?,?,?,?)", ("Acme", "Organizations", "abraham", "d1"))
+
+    assert merge_entity("Acme Inc.", "Acme", "Organizations", reason="explicit_alias", db_path=db_path)
+    with connect(db_path) as db:
+        assert db.execute(
+            "SELECT entity_name,entity_type,source,document_id FROM entity_sources"
+        ).fetchall() == [("Acme Inc.", "Organizations", "abraham", "d1")]
