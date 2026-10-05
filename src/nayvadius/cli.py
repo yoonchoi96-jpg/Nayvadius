@@ -4,12 +4,12 @@ from .engine import Engine
 from .db import status, failed_document_ids
 from .qa import audit_database, write_report
 from .adapters import load_abraham_jsonl, load_abel, load_jacques_json
-from .obsidian_audit import audit_vault, write_audit_report, normalize_vault, build_entity_merge_plan, write_merge_plan
+from .obsidian_audit import audit_vault, write_audit_report, normalize_vault, build_entity_merge_plan, write_merge_plan, apply_entity_merge_plan
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="nayvadius")
-    parser.add_argument("command", choices=["status", "process", "retry-failed", "qa", "obsidian-audit", "obsidian-normalize", "entity-merge-plan"])
+    parser.add_argument("command", choices=["status", "process", "retry-failed", "qa", "obsidian-audit", "obsidian-normalize", "entity-merge-plan", "entity-merge-apply"])
     parser.add_argument("--input", default="data/input.jsonl")
     parser.add_argument("--db", default="data/nayvadius.db")
     parser.add_argument("--output", default="output")
@@ -18,6 +18,14 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--max-attempts", type=int, default=5)
     args = parser.parse_args()
+
+    if args.command == "entity-merge-apply":
+        plan_path = str(args.output).rstrip("/") + "/entity_merge_plan.json"
+        with open(plan_path, encoding="utf-8") as fh:
+            plan = json.load(fh)
+        result = apply_entity_merge_plan(args.output, plan)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
 
     if args.command == "entity-merge-plan":
         plan = build_entity_merge_plan(args.output)
