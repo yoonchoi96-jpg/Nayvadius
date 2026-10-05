@@ -1,7 +1,7 @@
 import argparse
 import json
 from .engine import Engine
-from .db import status, failed_document_ids
+from .db import status, failed_document_ids, merge_entity
 from .qa import audit_database, write_report
 from .adapters import load_abraham_jsonl, load_abel, load_jacques_json
 from .obsidian_audit import audit_vault, write_audit_report, normalize_vault, build_entity_merge_plan, write_merge_plan, apply_entity_merge_plan
@@ -24,6 +24,15 @@ def main() -> None:
         with open(plan_path, encoding="utf-8") as fh:
             plan = json.load(fh)
         result = apply_entity_merge_plan(args.output, plan)
+        db_merges = []
+        for item in result.get("applied", []):
+            canonical = Path(item["canonical"]).stem
+            duplicate = Path(item["merged"]).stem
+            entity_type = Path(item["canonical"]).parts[1] if len(Path(item["canonical"]).parts) > 1 else ""
+            if entity_type:
+                merged = merge_entity(canonical, duplicate, entity_type, reason="exact_name")
+                db_merges.append({"canonical": canonical, "duplicate": duplicate, "entity_type": entity_type, "merged": merged})
+        result["db_merges"] = db_merges
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return
 
