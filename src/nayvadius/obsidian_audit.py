@@ -42,6 +42,64 @@ def _format_wikilink(parsed: dict[str, str], target: str) -> str:
     return value
 
 
+def _wikilink_matches(text: str) -> list[re.Match]:
+    """Find wikilinks outside Markdown fenced and inline code spans."""
+    masked = bytearray(len(text))
+    fence = None
+    offset = 0
+    fence_ranges = []
+    for line in text.splitlines(keepends=True):
+        line_end = offset + len(line)
+        if fence:
+            marker, length = fence
+            closing = re.match(r"^[ \t]{0,3}(" + re.escape(marker) + r"{"
+                               + str(length) + r",})[ \t]*$", line.rstrip("\r\n"))
+            if closing:
+                fence_ranges.append((fence_start, line_end))
+                fence = None
+        else:
+            opening = re.match(r"^[ \t]{0,3}(`{3,}|~{3,})(.*)$", line.rstrip("\r\n"))
+            if opening and not (
+                opening.group(1).startswith("`") and "`" in opening.group(2)
+            ):
+                fence = (opening.group(1)[0], len(opening.group(1)))
+                fence_start = offset
+        offset = line_end
+    if fence:
+        fence_ranges.append((fence_start, len(text)))
+
+    for start, end in fence_ranges:
+        masked[start:end] = b"\1" * (end - start)
+
+    runs = list(re.finditer(r"`+", text))
+    open_runs = {}
+    range_index = 0
+    for run in runs:
+        start, end = run.span()
+        while range_index < len(fence_ranges) and start >= fence_ranges[range_index][1]:
+            range_index += 1
+        if masked[start]:
+            continue
+        backslashes = 0
+        cursor = start - 1
+        while cursor >= 0 and text[cursor] == "\\":
+            backslashes += 1
+            cursor -= 1
+        if backslashes % 2:
+            continue
+        key = (range_index, end - start)
+        opening = open_runs.pop(key, None)
+        if opening:
+            masked[opening[0]:end] = b"\1" * (end - opening[0])
+        else:
+            open_runs[key] = (start, end)
+
+    return [
+        match for match in WIKILINK_RE.finditer(text)
+        if not any(masked[match.start():match.end()])
+    ]
+
+
 def _iter_markdown(root: str | Path) -> list[Path]:
     root = Path(root)
     if not root.exists():
@@ -223,7 +281,7 @@ def audit_vault(root: str | Path) -> dict:
         except (OSError, UnicodeError) as exc:
             errors.append(f"cannot read Markdown file {path.relative_to(root).as_posix()}: {exc}")
             continue
-        for match in WIKILINK_RE.finditer(text):
+        for match in _wikilink_matches(text):
             parsed = parse_wikilink(match.group(2))
             target = parsed["target"]
             if not target or target.startswith(("http://", "https://")):
@@ -346,19 +404,22 @@ def write_audit_report(report: dict, path: str | Path) -> None:
 def _rewrite_target(text: str, replacements: dict[str, str]) -> tuple[str, int, list[dict]]:
     count = 0
     rewrites = []
-
-    def replace(match: re.Match) -> str:
-        nonlocal count
+    output = []
+    offset = 0
+    for match in _wikilink_matches(text):
         parsed = parse_wikilink(match.group(2))
         new_target = replacements.get(normalize_entity_name(parsed["target"]))
         if not new_target or new_target == parsed["target"]:
-            return match.group(0)
+            continue
         count += 1
         formatted = _format_wikilink(parsed, new_target)
         rewrites.append({"from": match.group(2), "to": formatted})
-        return match.group(1) + "[[" + formatted + "]]"
-
-    return WIKILINK_RE.sub(replace, text), count, rewrites
+        output.extend((text[offset:match.start()], match.group(1) + "[[" + formatted + "]]"))
+        offset = match.end()
+    if not count:
+        return text, 0, rewrites
+    output.append(text[offset:])
+    return "".join(output), count, rewrites
 
 
 def normalize_vault(root: str | Path, apply: bool = False) -> dict:
@@ -797,7 +858,7 @@ def audit_vault_database(root: str | Path, db_path: str | Path) -> dict:
         files = _iter_markdown(root)
         index = _link_target_index(root, files, vault_entities)
         for source_path in files:
-            for match in WIKILINK_RE.finditer(source_path.read_text(encoding="utf-8")):
+            for match in _wikilink_matches(source_path.read_text(encoding="utf-8")):
                 target_name = parse_wikilink(match.group(2))["target"]
                 key = normalize_entity_name(target_name)
                 candidates = index.get(key, [])

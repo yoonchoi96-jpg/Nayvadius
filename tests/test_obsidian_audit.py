@@ -145,6 +145,45 @@ def test_normalize_dry_run_does_not_modify_and_apply_rewrites(tmp_path: Path):
     assert normalize_vault(root, apply=True)["changed"] == 0
 
 
+def test_audit_ignores_wikilinks_in_markdown_code(tmp_path: Path):
+    root = tmp_path / "vault"
+    root.mkdir()
+    note = root / "note.md"
+    note.write_text(
+        "Real link: [[Missing]].\n"
+        "`[[Inline Example]]`\n"
+        "```markdown\n[[Fenced Example]]\n```\n"
+        "~~~text\n[[Tilde Example]]\n~~~\n",
+        encoding="utf-8",
+    )
+
+    report = audit_vault(root)
+    unresolved = [
+        warning["target"] for warning in report["warnings"]
+        if warning["kind"] == "unresolved_wikilink"
+    ]
+    assert unresolved == ["Missing"]
+
+
+def test_normalize_does_not_rewrite_wikilinks_in_code(tmp_path: Path):
+    from nayvadius.obsidian_audit import normalize_vault
+    root = tmp_path / "vault"
+    people = root / "entities" / "People"
+    people.mkdir(parents=True)
+    (people / "David Bowie.md").write_text("# David Bowie\n", encoding="utf-8")
+    note = root / "note.md"
+    note.write_text(
+        "`[[david bowie]]`\n```md\n[[david bowie]]\n```\n[[david bowie]]\n",
+        encoding="utf-8",
+    )
+
+    result = normalize_vault(root, apply=True)
+    assert result["changed"] == 1
+    assert note.read_text(encoding="utf-8") == (
+        "`[[david bowie]]`\n```md\n[[david bowie]]\n```\n[[David Bowie]]\n"
+    )
+
+
 def test_audit_reports_empty_notes_orphans_and_wikilink_forms(tmp_path: Path):
     root = tmp_path / "vault"
     people = root / "entities" / "People"
