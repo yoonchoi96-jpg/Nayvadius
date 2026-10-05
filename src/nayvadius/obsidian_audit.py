@@ -67,7 +67,7 @@ def normalize_vault(root, apply=False):
             continue
         path = root / warning["file"]
         text = path.read_text(encoding="utf-8")
-        pattern = re.compile(r"\\[\\[" + re.escape(target) + r"\\]\\]", re.IGNORECASE)
+        pattern = re.compile(r"\[\[" + re.escape(target) + r"\]\]", re.IGNORECASE)
         new_text, count = pattern.subn("[[" + candidates[0].stem + "]]", text)
         if count and new_text != text:
             changes.append({"file": warning["file"], "target": target, "replacement": candidates[0].stem, "count": count})
@@ -112,3 +112,48 @@ def write_merge_plan(plan, path):
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def apply_entity_merge_plan(root, plan, backup_dir=".nayvadius-backup"):
+    """Apply only unambiguous same-domain merge candidates.
+
+    The lexicographically first path is retained. Duplicate notes are moved to
+    a timestamp-free deterministic backup tree, and wikilinks are rewritten to
+    the retained stem. The operation is intentionally limited to candidates
+    produced by build_entity_merge_plan().
+    """
+    root = Path(root)
+    backup_root = root / backup_dir
+    applied = []
+    skipped = []
+    for item in plan.get("candidates", []):
+        paths = [root / p for p in item.get("candidates", [])]
+        if item.get("action") != "REVIEW" or len(paths) < 2:
+            skipped.append({"item": item, "reason": "not an eligible review candidate"})
+            continue
+        if item.get("domain") not in ENTITY_TYPES:
+            skipped.append({"item": item, "reason": "unknown entity domain"})
+            continue
+        paths = sorted(p for p in paths if p.exists())
+        if len(paths) < 2:
+            skipped.append({"item": item, "reason": "candidate files changed or disappeared"})
+            continue
+        canonical = paths[0]
+        canonical_stem = canonical.stem
+        for duplicate in paths[1:]:
+            rel = duplicate.relative_to(root)
+            backup = backup_root / rel
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            duplicate.rename(backup)
+            for md in _iter_markdown(root):
+                text = md.read_text(encoding="utf-8")
+                pattern = re.compile(r"\[\[" + re.escape(duplicate.stem) + r"(?:#[^\]|]*)?(?:\|[^\]]+)?\]\]", re.IGNORECASE)
+                new_text, count = pattern.subn("[[" + canonical_stem + "]]", text)
+                if count:
+                    md.write_text(new_text, encoding="utf-8")
+            applied.append({
+                "canonical": str(canonical.relative_to(root)),
+                "merged": str(rel),
+                "backup": str(backup.relative_to(root)),
+            })
+    return {"status": "APPLIED", "applied": applied, "skipped": skipped}
