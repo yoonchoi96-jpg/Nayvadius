@@ -20,7 +20,7 @@ def normalize_entity_name(value: str) -> str:
     return " ".join("".join(char if char.isalnum() else " " for char in value).split())
 
 
-def parse_wikilink(value: str) -> dict[str, str]:
+def parse_wikilink(value: str) -> dict[str, str | bool]:
     """Split an Obsidian target into destination, heading, and display text."""
     destination, separator, display = value.partition("|")
     target, anchor_separator, heading = destination.partition("#")
@@ -28,16 +28,16 @@ def parse_wikilink(value: str) -> dict[str, str]:
         "target": target.strip(),
         "heading": heading.strip() if anchor_separator else "",
         "display": display if separator else "",
-        "has_display": str(bool(separator)),
-        "has_heading": str(bool(anchor_separator)),
+        "has_display": bool(separator),
+        "has_heading": bool(anchor_separator),
     }
 
 
 def _format_wikilink(parsed: dict[str, str], target: str) -> str:
     value = target
-    if parsed["has_heading"] == "True":
+    if parsed["has_heading"]:
         value += "#" + parsed["heading"]
-    if parsed["has_display"] == "True":
+    if parsed["has_display"]:
         value += "|" + parsed["display"]
     return value
 
@@ -96,7 +96,7 @@ def _wikilink_matches(text: str) -> list[re.Match]:
 
     return [
         match for match in WIKILINK_RE.finditer(text)
-        if not any(masked[match.start():match.end()])
+        if not match.group(1) and not any(masked[match.start():match.end()])
     ]
 
 
@@ -644,11 +644,14 @@ def apply_entity_merge_plan(
         if item.get("action") != "AUTO":
             skipped.append({"item": item, "reason": "REVIEW and SKIP candidates require human handling"})
             continue
-        if len(paths) < 2:
-            skipped.append({"item": item, "reason": "candidate has fewer than two files"})
+        if not isinstance(paths, list) or any(not isinstance(path, str) for path in paths):
+            skipped.append({"item": item, "reason": "candidate paths are invalid"})
+            continue
+        if len(paths) < 2 or len(set(paths)) != len(paths):
+            skipped.append({"item": item, "reason": "candidate paths are duplicate or incomplete"})
             continue
         resolved = [_safe_plan_path(root, value) for value in paths]
-        if any(path is None for path in resolved):
+        if any(path is None for path in resolved) or len(set(resolved)) != len(resolved):
             skipped.append({"item": item, "reason": "candidate path is invalid or missing"})
             continue
         expected = item.get("file_hashes", {})

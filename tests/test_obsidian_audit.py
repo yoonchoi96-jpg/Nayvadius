@@ -89,6 +89,30 @@ def test_review_only_merge_apply_is_a_noop(tmp_path: Path):
     assert not (root / ".nayvadius-backup").exists()
 
 
+def test_merge_apply_rejects_repeated_path_in_tampered_plan(tmp_path: Path):
+    from nayvadius.obsidian_audit import apply_entity_merge_plan
+
+    root = tmp_path / "vault"
+    entity = root / "entities" / "People" / "Keep.md"
+    entity.parent.mkdir(parents=True)
+    entity.write_text("# Keep\n", encoding="utf-8")
+    from nayvadius.obsidian_audit import _sha256
+    relative = "entities/People/Keep.md"
+    plan = {
+        "candidates": [{
+            "action": "AUTO",
+            "candidates": [relative, relative],
+            "file_hashes": {relative: _sha256(entity.read_bytes())},
+        }]
+    }
+
+    result = apply_entity_merge_plan(root, plan, apply=True)
+    assert result["status"] == "REVIEW"
+    assert result["changed"] == 0
+    assert entity.read_text(encoding="utf-8") == "# Keep\n"
+    assert not (root / ".nayvadius-backup").exists()
+
+
 def test_merge_plan_classifies_metadata_conflicts_and_cross_domain_names(tmp_path: Path):
     from nayvadius.obsidian_audit import build_entity_merge_plan
     root = tmp_path / "vault"
@@ -120,7 +144,7 @@ def test_wikilink_parser_keeps_heading_and_display_components():
     parsed = parse_wikilink("Steve Jobs#Early life|Founder")
     assert parsed == {
         "target": "Steve Jobs", "heading": "Early life",
-        "display": "Founder", "has_display": "True", "has_heading": "True",
+        "display": "Founder", "has_display": True, "has_heading": True,
     }
 
 
@@ -151,6 +175,7 @@ def test_audit_ignores_wikilinks_in_markdown_code(tmp_path: Path):
     note = root / "note.md"
     note.write_text(
         "Real link: [[Missing]].\n"
+        "Embedded link: ![[Embedded Note]].\n"
         "`[[Inline Example]]`\n"
         "```markdown\n[[Fenced Example]]\n```\n"
         "~~~text\n[[Tilde Example]]\n~~~\n",
@@ -173,14 +198,14 @@ def test_normalize_does_not_rewrite_wikilinks_in_code(tmp_path: Path):
     (people / "David Bowie.md").write_text("# David Bowie\n", encoding="utf-8")
     note = root / "note.md"
     note.write_text(
-        "`[[david bowie]]`\n```md\n[[david bowie]]\n```\n[[david bowie]]\n",
+        "`[[david bowie]]`\n```md\n[[david bowie]]\n```\n![[david bowie]]\n[[david bowie]]\n",
         encoding="utf-8",
     )
 
     result = normalize_vault(root, apply=True)
     assert result["changed"] == 1
     assert note.read_text(encoding="utf-8") == (
-        "`[[david bowie]]`\n```md\n[[david bowie]]\n```\n[[David Bowie]]\n"
+        "`[[david bowie]]`\n```md\n[[david bowie]]\n```\n![[david bowie]]\n[[David Bowie]]\n"
     )
 
 
