@@ -1,0 +1,69 @@
+name: Nayvadius Live Obsidian Sync
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - src/**
+      - scripts/obsidian_rest_sync.py
+      - data/**
+      - output/**
+      - config/**
+      - pyproject.toml
+  workflow_dispatch:
+  schedule:
+    - cron: '37 3 * * *'
+
+concurrency:
+  group: nayvadius-live-obsidian
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    # Must run on the Mac that has the user's live Obsidian instance.
+    runs-on: [self-hosted, macOS, X64]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Obsidian Local REST API
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, urllib.request, ssl
+          vault = pathlib.Path("/Users/w/Desktop/Invest/Invest Insight")
+          cfg = vault / ".obsidian/plugins/obsidian-local-rest-api/data.json"
+          if not cfg.exists():
+              raise SystemExit(f"Local REST API config missing: {cfg}")
+          data = json.loads(cfg.read_text(encoding="utf-8"))
+          key = data.get("apiKey")
+          if not key:
+              raise SystemExit("Local REST API apiKey missing")
+          port = int(data.get("port", 27124))
+          req = urllib.request.Request(
+              f"https://127.0.0.1:{port}/",
+              headers={"Authorization": f"Bearer {key}"},
+          )
+          with urllib.request.urlopen(req, context=ssl._create_unverified_context(), timeout=10) as r:
+              payload = json.loads(r.read())
+          if not payload.get("authenticated"):
+              raise SystemExit(f"Obsidian REST authentication failed: {payload}")
+          print("Obsidian Local REST API: connected")
+          PY
+      - name: Install Nayvadius
+        run: python3 -m pip install -e .
+      - name: Run live Obsidian reconciliation
+        run: python3 scripts/obsidian_rest_sync.py
+      - name: Commit reconciliation state
+        if: always()
+        run: |
+          git config user.name 'nayvadius-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add data/*.db output/obsidian_live_sync_report.json || true
+          if git diff --cached --quiet; then
+            echo 'No Nayvadius state changes to commit.'
+          else
+            git commit -m 'chore: reconcile live Obsidian vault'
+            git push
+          fi
