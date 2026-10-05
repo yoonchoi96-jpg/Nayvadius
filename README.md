@@ -201,3 +201,27 @@ backed up under `.nayvadius-backup/` with a hash and operation manifest; origina
 vault files are never permanently discarded. The maintenance command writes
 `nayvadius_maintenance_report.json` and compares entity files, links, provenance,
 aliases, and relation endpoints with the SQLite database.
+
+
+## Live Obsidian bridge
+
+The live bridge connects to the user's running Obsidian instance through the Local REST API
+on the same macOS runner. It mirrors Markdown into an isolated temporary workspace, runs
+the existing deterministic audit/normalization/entity-merge engine, then writes only the
+resulting changes back through the REST API. Each overwrite/delete is backed up in the
+vault under `.nayvadius-backup/live-rest/<timestamp>/`, and a remote note is never
+overwritten
+if its content changed after the mirror was taken.
+
+The scheduled/manual workflow is:
+`.github/workflows/obsidian-live-sync.yml`
+
+It uses the Local REST API key from
+`.obsidian/plugins/obsidian-local-rest-api/data.json` on the Mac runner when
+`OBSIDIAN_API_KEY` is not explicitly supplied. The default live vault is
+`/Users/w/Desktop/Invest/Invest Insight` and the default HTTPS endpoint is
+`https://127.0.0.1:27124`.
+
+The bridge intentionally excludes hidden paths (including `.obsidian/`) and non-Markdown
+attachments from the reconciliation mirror, so plugin configuration and binary assets are
+not rewritten by Nayvadius.
