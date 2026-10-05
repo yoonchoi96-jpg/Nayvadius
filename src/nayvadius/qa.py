@@ -40,6 +40,13 @@ def _table_exists(db: sqlite3.Connection, name: str) -> bool:
     ).fetchone())
 
 
+def _valid_confidence(value: Any) -> bool:
+    try:
+        return 0 <= float(value) <= 1
+    except (TypeError, ValueError):
+        return False
+
+
 def audit_database(path: str | Path) -> dict[str, Any]:
     """Audit the persisted Nayvadius DB without mutating it."""
     db = sqlite3.connect(path)
@@ -173,7 +180,7 @@ def audit_database(path: str | Path) -> dict[str, Any]:
                 "Relation type is not normalized snake_case.",
                 relation=row["relation"],
             ))
-        if row["confidence"] is None or not 0 <= float(row["confidence"]) <= 1:
+        if not _valid_confidence(row["confidence"]):
             findings.append(_finding(
                 "relation.confidence_range", "error",
                 "Relation confidence is outside [0,1].",
@@ -227,6 +234,181 @@ def audit_database(path: str | Path) -> dict[str, Any]:
             relation=row["relation"], target=row["target_name"],
             status=row["status"],
         ))
+
+    # Source attribution must resolve on both ends of its link.
+    orphan_sources = db.execute(
+        "SELECT es.entity_name,es.entity_type,es.source,es.document_id "
+        "FROM entity_sources es "
+        "LEFT JOIN entities e ON e.name=es.entity_name AND e.entity_type=es.entity_type "
+        "LEFT JOIN documents d ON d.id=es.document_id "
+        "WHERE e.name IS NULL OR d.id IS NULL LIMIT 100"
+    ).fetchall()
+    for row in orphan_sources:
+        findings.append(_finding(
+            "entity_source.orphan", "error",
+            "Entity provenance points to a missing entity or document.",
+            entity_name=row["entity_name"], entity_type=row["entity_type"],
+            source=row["source"], document_id=row["document_id"],
+        ))
+
+    orphan_entity_vocabulary = db.execute(
+        "SELECT l.entity_name,l.entity_type,l.vocabulary_id,l.confidence "
+        "FROM entity_vocabulary_links l "
+        "LEFT JOIN entities e ON e.name=l.entity_name AND e.entity_type=l.entity_type "
+        "LEFT JOIN vocabularies v ON v.id=l.vocabulary_id "
+        "WHERE e.name IS NULL OR v.id IS NULL LIMIT 100"
+    ).fetchall()
+    for row in orphan_entity_vocabulary:
+        findings.append(_finding(
+            "entity_vocabulary.orphan", "error",
+            "Entity-vocabulary link points to a missing entity or vocabulary.",
+            entity_name=row["entity_name"], entity_type=row["entity_type"],
+            vocabulary_id=row["vocabulary_id"],
+        ))
+    bad_entity_vocabulary_confidence = db.execute(
+        "SELECT entity_name,entity_type,vocabulary_id,confidence "
+        "FROM entity_vocabulary_links"
+    ).fetchall()
+    for row in bad_entity_vocabulary_confidence:
+        if not _valid_confidence(row["confidence"]):
+            findings.append(_finding(
+                "entity_vocabulary.confidence_range", "error",
+                "Entity-vocabulary confidence is outside [0,1].",
+                entity_name=row["entity_name"], entity_type=row["entity_type"],
+                vocabulary_id=row["vocabulary_id"], confidence=row["confidence"],
+            ))
+
+    orphan_document_vocabulary = db.execute(
+        "SELECT l.document_id,l.vocabulary_id,l.confidence "
+        "FROM document_vocabulary_links l "
+        "LEFT JOIN documents d ON d.id=l.document_id "
+        "LEFT JOIN vocabularies v ON v.id=l.vocabulary_id "
+        "WHERE d.id IS NULL OR v.id IS NULL LIMIT 100"
+    ).fetchall()
+    for row in orphan_document_vocabulary:
+        findings.append(_finding(
+            "document_vocabulary.orphan", "error",
+            "Document-vocabulary link points to a missing document or vocabulary.",
+            document_id=row["document_id"], vocabulary_id=row["vocabulary_id"],
+        ))
+    bad_document_vocabulary_confidence = db.execute(
+        "SELECT document_id,vocabulary_id,confidence FROM document_vocabulary_links"
+    ).fetchall()
+    for row in bad_document_vocabulary_confidence:
+        if not _valid_confidence(row["confidence"]):
+            findings.append(_finding(
+                "document_vocabulary.confidence_range", "error",
+                "Document-vocabulary confidence is outside [0,1].",
+                document_id=row["document_id"], vocabulary_id=row["vocabulary_id"],
+                confidence=row["confidence"],
+            ))
+
+    orphan_vocabulary_sources = db.execute(
+        "SELECT vs.vocabulary_id,vs.source_id,vs.source FROM vocabulary_sources vs "
+        "LEFT JOIN vocabularies v ON v.id=vs.vocabulary_id "
+        "WHERE v.id IS NULL LIMIT 100"
+    ).fetchall()
+    for row in orphan_vocabulary_sources:
+        findings.append(_finding(
+            "vocabulary_source.orphan", "error",
+            "Vocabulary provenance points to a missing vocabulary.",
+            vocabulary_id=row["vocabulary_id"], source_id=row["source_id"],
+            source=row["source"],
+        ))
+
+    # Derived graph tables are rebuilt at runtime; validate them when present.
+    if _table_exists(db, "derived_relations"):
+        for row in db.execute(
+            "SELECT source_name,relation,target_name,confidence FROM derived_relations"
+        ):
+            source_exists = db.execute(
+                "SELECT 1 FROM entities WHERE name=? LIMIT 1",
+                (row["source_name"],),
+            ).fetchone()
+            target_exists = db.execute(
+                "SELECT 1 FROM entities WHERE name=? LIMIT 1",
+                (row["target_name"],),
+            ).fetchone()
+            if not source_exists or not target_exists:
+                findings.append(_finding(
+                    "derived_relation.orphan_endpoint", "error",
+                    "Derived relation references a missing entity endpoint.",
+                    source=row["source_name"], relation=row["relation"],
+                    target=row["target_name"],
+                ))
+            if not _valid_confidence(row["confidence"]):
+                findings.append(_finding(
+                    "derived_relation.confidence_range", "error",
+                    "Derived relation confidence is outside [0,1].",
+                    source=row["source_name"], relation=row["relation"],
+                    target=row["target_name"], confidence=row["confidence"],
+                ))
+
+    if _table_exists(db, "cross_domain_links"):
+        for row in db.execute(
+            "SELECT left_name,left_type,right_id,right_kind,confidence "
+            "FROM cross_domain_links"
+        ):
+            if row["left_type"] == "Vocabulary":
+                left_exists = db.execute(
+                    "SELECT 1 FROM vocabularies WHERE id=?", (row["left_name"],)
+                ).fetchone()
+                expected_type = {
+                    "music_track": "MusicTracks",
+                    "music_album": "MusicAlbums",
+                }.get(row["right_kind"])
+                right_exists = db.execute(
+                    "SELECT 1 FROM entities WHERE name=? AND entity_type=?",
+                    (row["right_id"], expected_type),
+                ).fetchone() if expected_type else None
+            else:
+                left_exists = db.execute(
+                    "SELECT 1 FROM entities WHERE name=? AND entity_type=?",
+                    (row["left_name"], row["left_type"]),
+                ).fetchone()
+                right_exists = db.execute(
+                    "SELECT 1 FROM vocabularies WHERE id=?", (row["right_id"],)
+                ).fetchone() if row["right_kind"] == "vocabulary" else None
+            if not left_exists or not right_exists:
+                findings.append(_finding(
+                    "cross_domain_link.orphan_endpoint", "error",
+                    "Cross-domain link points to a missing or unsupported endpoint.",
+                    left_name=row["left_name"], left_type=row["left_type"],
+                    right_id=row["right_id"], right_kind=row["right_kind"],
+                ))
+            if not _valid_confidence(row["confidence"]):
+                findings.append(_finding(
+                    "cross_domain_link.confidence_range", "error",
+                    "Cross-domain link confidence is outside [0,1].",
+                    left_name=row["left_name"], left_type=row["left_type"],
+                    right_id=row["right_id"], right_kind=row["right_kind"],
+                    confidence=row["confidence"],
+                ))
+
+    if _table_exists(db, "source_bridge_links"):
+        for row in db.execute(
+            "SELECT entity_name,entity_type,source_a,source_b,confidence "
+            "FROM source_bridge_links"
+        ):
+            entity_exists = db.execute(
+                "SELECT 1 FROM entities WHERE name=? AND entity_type=?",
+                (row["entity_name"], row["entity_type"]),
+            ).fetchone()
+            if not entity_exists or row["source_a"] == row["source_b"]:
+                findings.append(_finding(
+                    "source_bridge.invalid_endpoint", "error",
+                    "Source bridge references a missing entity or identical sources.",
+                    entity_name=row["entity_name"], entity_type=row["entity_type"],
+                    source_a=row["source_a"], source_b=row["source_b"],
+                ))
+            if not _valid_confidence(row["confidence"]):
+                findings.append(_finding(
+                    "source_bridge.confidence_range", "error",
+                    "Source bridge confidence is outside [0,1].",
+                    entity_name=row["entity_name"], entity_type=row["entity_type"],
+                    source_a=row["source_a"], source_b=row["source_b"],
+                    confidence=row["confidence"],
+                ))
 
     # Results should not exist without a source document.
     orphan_results = db.execute(
