@@ -69,7 +69,11 @@ def main() -> None:
 
     if args.command == "obsidian-audit":
         report = audit_vault(args.output)
-        report["db_consistency"] = audit_vault_database(args.output, args.db)
+        consistency = audit_vault_database(args.output, args.db)
+        report["db_consistency"] = consistency
+        if consistency["errors"]:
+            report["status"] = "FAIL"
+            report["summary"]["error"] += consistency["summary"]["error"]
         report_path = str(args.output).rstrip("/") + "/obsidian_audit_report.json"
         write_audit_report(report, report_path)
         print(json.dumps(report, ensure_ascii=False, indent=2))

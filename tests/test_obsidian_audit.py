@@ -165,8 +165,10 @@ def test_normalize_dry_run_does_not_modify_and_apply_rewrites(tmp_path: Path):
     done = normalize_vault(root, apply=True)
     assert done["applied"] is True
     assert note.read_text(encoding="utf-8") == "[[David Bowie#Early life|Founder]] [[Unrelated]]\n"
+    assert audit_vault(root)["status"] == "PASS"
     assert len(list((root / ".nayvadius-backup").rglob("*.md"))) == 1
     assert normalize_vault(root, apply=True)["changed"] == 0
+    assert normalize_vault(root)["changes"] == []
 
 
 def test_audit_ignores_wikilinks_in_markdown_code(tmp_path: Path):
@@ -262,6 +264,38 @@ def test_db_vault_maintenance_reports_both_sides_without_mutating(tmp_path: Path
     assert report["summary"]["unresolved_links"] == 1
 
 
+def test_db_consistency_reports_broken_document_and_provenance_references_read_only(tmp_path: Path):
+    import hashlib
+    import sqlite3
+    from nayvadius.obsidian_audit import audit_vault_database
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    db_path = tmp_path / "state.db"
+    db = sqlite3.connect(db_path)
+    db.executescript("""
+    CREATE TABLE documents(id TEXT PRIMARY KEY);
+    CREATE TABLE entities(name TEXT,entity_type TEXT,aliases TEXT);
+    CREATE TABLE document_entities(document_id TEXT,entity_name TEXT,entity_type TEXT);
+    CREATE TABLE entity_sources(entity_name TEXT,entity_type TEXT,source TEXT,document_id TEXT);
+    CREATE TABLE relations(source_name TEXT,relation TEXT,target_name TEXT);
+    INSERT INTO entities VALUES('Alice','People','');
+    INSERT INTO document_entities VALUES('missing-doc','Missing Entity','People');
+    INSERT INTO entity_sources VALUES('Missing Entity','People','abraham','missing-doc');
+    """)
+    db.commit()
+    db.close()
+    original_hash = hashlib.sha256(db_path.read_bytes()).hexdigest()
+
+    report = audit_vault_database(root, db_path)
+
+    assert report["document_entities_missing_db_entities"]
+    assert report["document_entities_missing_documents"]
+    assert report["entity_sources_missing_db_entities"]
+    assert report["entity_sources_missing_documents"]
+    assert hashlib.sha256(db_path.read_bytes()).hexdigest() == original_hash
+
+
 def test_audit_flags_wrong_domain_link_and_punctuation_only_entity(tmp_path: Path):
     root = tmp_path / "vault"
     (root / "entities" / "People").mkdir(parents=True)
@@ -331,3 +365,23 @@ def test_maintenance_cli_writes_machine_readable_report(tmp_path: Path, capsys):
     report = json.loads(report_path.read_text(encoding="utf-8"))
     assert report["title"] == "Nayvadius Maintenance Report"
     assert report["summary"]["scanned"] == 0
+
+
+def test_obsidian_audit_fails_when_database_is_missing(tmp_path: Path, monkeypatch, capsys):
+    import sys
+    from nayvadius import cli
+    from nayvadius.config import settings
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    monkeypatch.setattr(settings, "state_path", str(tmp_path / "state.db"))
+    sys.argv = [
+        "nayvadius", "obsidian-audit", "--output", str(root),
+        "--db", str(tmp_path / "missing.db"),
+    ]
+    try:
+        cli.main()
+        assert False, "expected a failing exit code for a missing DB"
+    except SystemExit as exc:
+        assert exc.code == 1
+    assert '"status": "FAIL"' in capsys.readouterr().out

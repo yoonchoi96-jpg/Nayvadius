@@ -807,6 +807,10 @@ def audit_vault_database(root: str | Path, db_path: str | Path) -> dict:
     db_entities = {}
     db_relations = []
     db_missing_relation_entities = []
+    document_entities_missing_entities = []
+    document_entities_missing_documents = []
+    entity_sources_missing_entities = []
+    entity_sources_missing_documents = []
     provenance = set()
     errors = []
     if not db_path.exists():
@@ -814,7 +818,9 @@ def audit_vault_database(root: str | Path, db_path: str | Path) -> dict:
     else:
         db = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         db.row_factory = sqlite3.Row
-        if _table_exists(db, "entities"):
+        has_entities = _table_exists(db, "entities")
+        has_documents = _table_exists(db, "documents")
+        if has_entities:
             for row in db.execute("SELECT name,entity_type,aliases FROM entities"):
                 domain = LEGACY_ENTITY_TYPES.get(row["entity_type"], row["entity_type"])
                 db_entities[(domain, normalize_entity_name(row["name"]))] = {
@@ -826,6 +832,52 @@ def audit_vault_database(root: str | Path, db_path: str | Path) -> dict:
                 (row["entity_name"], row["entity_type"])
                 for row in db.execute("SELECT DISTINCT entity_name,entity_type FROM entity_sources")
             }
+            source_columns = {row["name"] for row in db.execute("PRAGMA table_info(entity_sources)")}
+            source_fields = "entity_name,entity_type"
+            if "document_id" in source_columns:
+                source_fields += ",document_id"
+            for row in db.execute(f"SELECT {source_fields} FROM entity_sources"):
+                entity_key = (
+                    LEGACY_ENTITY_TYPES.get(row["entity_type"], row["entity_type"]),
+                    normalize_entity_name(row["entity_name"]),
+                )
+                if entity_key not in db_entities:
+                    entity_sources_missing_entities.append({
+                        "entity_name": row["entity_name"],
+                        "entity_type": entity_key[0],
+                    })
+                if "document_id" in source_columns and has_documents and not db.execute(
+                    "SELECT 1 FROM documents WHERE id=? LIMIT 1", (row["document_id"],)
+                ).fetchone():
+                    entity_sources_missing_documents.append({
+                        "entity_name": row["entity_name"],
+                        "entity_type": entity_key[0],
+                        "document_id": row["document_id"],
+                    })
+        if _table_exists(db, "document_entities"):
+            document_entity_columns = {
+                row["name"] for row in db.execute("PRAGMA table_info(document_entities)")
+            }
+            if {"document_id", "entity_name", "entity_type"} <= document_entity_columns:
+                for row in db.execute(
+                    "SELECT document_id,entity_name,entity_type FROM document_entities"
+                ):
+                    domain = LEGACY_ENTITY_TYPES.get(row["entity_type"], row["entity_type"])
+                    entity_key = (domain, normalize_entity_name(row["entity_name"]))
+                    if entity_key not in db_entities:
+                        document_entities_missing_entities.append({
+                            "document_id": row["document_id"],
+                            "entity_name": row["entity_name"],
+                            "entity_type": domain,
+                        })
+                    if has_documents and not db.execute(
+                        "SELECT 1 FROM documents WHERE id=? LIMIT 1", (row["document_id"],)
+                    ).fetchone():
+                        document_entities_missing_documents.append({
+                            "document_id": row["document_id"],
+                            "entity_name": row["entity_name"],
+                            "entity_type": domain,
+                        })
         if _table_exists(db, "relations"):
             db_relations = [
                 (row["source_name"], row["relation"], row["target_name"])
@@ -834,7 +886,9 @@ def audit_vault_database(root: str | Path, db_path: str | Path) -> dict:
             for source, relation, target in db_relations:
                 missing = []
                 for name in (source, target):
-                    if not db.execute("SELECT 1 FROM entities WHERE name=? LIMIT 1", (name,)).fetchone():
+                    if not has_entities or not db.execute(
+                        "SELECT 1 FROM entities WHERE name=? LIMIT 1", (name,)
+                    ).fetchone():
                         missing.append(name)
                 if missing:
                     db_missing_relation_entities.append({
@@ -896,6 +950,10 @@ def audit_vault_database(root: str | Path, db_path: str | Path) -> dict:
         "db_entities_missing_canonical_files": [
             entity for entity in db_only if entity.get("aliases")
         ],
+        "document_entities_missing_db_entities": document_entities_missing_entities,
+        "document_entities_missing_documents": document_entities_missing_documents,
+        "entity_sources_missing_db_entities": entity_sources_missing_entities,
+        "entity_sources_missing_documents": entity_sources_missing_documents,
         "db_relations_missing_db_endpoints": db_missing_relation_entities,
         "db_relations_missing_vault_endpoints": relation_missing,
         "errors": errors,
@@ -905,6 +963,10 @@ def audit_vault_database(root: str | Path, db_path: str | Path) -> dict:
             "links_to_entities_absent_from_db": len(links_absent_db),
             "db_only": len(db_only),
             "db_entities_missing_canonical_files": sum(bool(entity.get("aliases")) for entity in db_only),
+            "document_entities_missing_db_entities": len(document_entities_missing_entities),
+            "document_entities_missing_documents": len(document_entities_missing_documents),
+            "entity_sources_missing_db_entities": len(entity_sources_missing_entities),
+            "entity_sources_missing_documents": len(entity_sources_missing_documents),
             "db_relations_missing_db_endpoints": len(db_missing_relation_entities),
             "db_relations_missing_vault_endpoints": len(relation_missing),
             "error": len(errors),
@@ -916,12 +978,16 @@ def maintenance_report(root: str | Path, db_path: str | Path) -> dict:
     audit = audit_vault(root)
     merge_plan = build_entity_merge_plan(root)
     consistency = audit_vault_database(root, db_path)
+    consistency_issues = sum(
+        count for key, count in consistency["summary"].items() if key != "error"
+    )
     summary = {
         "scanned": audit["summary"]["scanned"],
         "clean": audit["summary"]["clean"],
         "warning": audit["summary"]["warning"],
-        "review": merge_plan["counts"]["REVIEW"] + audit["summary"]["review"],
+        "review": merge_plan["counts"]["REVIEW"] + audit["summary"]["review"] + consistency_issues,
         "error": audit["summary"]["error"] + consistency["summary"]["error"],
+        "db_consistency_issues": consistency_issues,
         "changed": 0,
         "skipped": merge_plan["counts"]["SKIP"],
         "unresolved_links": sum(w["kind"] == "unresolved_wikilink" for w in audit["warnings"]),
@@ -934,7 +1000,9 @@ def maintenance_report(root: str | Path, db_path: str | Path) -> dict:
         "review_merge_candidates": merge_plan["counts"]["REVIEW"],
         "skip_merge_candidates": merge_plan["counts"]["SKIP"],
     }
-    status = "FAIL" if summary["error"] else ("REVIEW" if summary["warning"] or summary["review"] or summary["skipped"] else "PASS")
+    status = "FAIL" if summary["error"] else (
+        "REVIEW" if summary["warning"] or summary["review"] or summary["skipped"] else "PASS"
+    )
     return {
         "title": "Nayvadius Maintenance Report",
         "status": status,
