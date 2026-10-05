@@ -37,3 +37,22 @@ def test_entity_merge_plan_detects_same_normalized_name(tmp_path: Path):
     assert plan["status"] == "REVIEW"
     assert plan["candidate_count"] == 1
     assert plan["candidates"][0]["action"] == "REVIEW"
+
+
+def test_entity_merge_apply_keeps_canonical_and_backs_up_duplicate(tmp_path: Path):
+    from nayvadius.obsidian_audit import build_entity_merge_plan, apply_entity_merge_plan
+    root = tmp_path / "vault"
+    people = root / "entities" / "People"
+    people.mkdir(parents=True)
+    (people / "David Bowie.md").write_text("# canonical\n", encoding="utf-8")
+    (people / "David  Bowie.md").write_text("# duplicate\n", encoding="utf-8")
+    note = root / "note.md"
+    note.write_text("[[David  Bowie]]\n", encoding="utf-8")
+
+    plan = build_entity_merge_plan(root)
+    result = apply_entity_merge_plan(root, plan)
+    assert result["status"] == "APPLIED"
+    assert (people / "David Bowie.md").exists()
+    assert not (people / "David  Bowie.md").exists()
+    assert (root / ".nayvadius-backup" / "entities" / "People" / "David  Bowie.md").exists()
+    assert note.read_text(encoding="utf-8") == "[[David Bowie]]\n"
