@@ -4,12 +4,12 @@ from .engine import Engine
 from .db import status, failed_document_ids
 from .qa import audit_database, write_report
 from .adapters import load_abraham_jsonl, load_abel, load_jacques_json
-from .obsidian_audit import audit_vault, write_audit_report
+from .obsidian_audit import audit_vault, write_audit_report, normalize_vault
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="nayvadius")
-    parser.add_argument("command", choices=["status", "process", "retry-failed", "qa", "obsidian-audit"])
+    parser.add_argument("command", choices=["status", "process", "retry-failed", "qa", "obsidian-audit", "obsidian-normalize"])
     parser.add_argument("--input", default="data/input.jsonl")
     parser.add_argument("--db", default="data/nayvadius.db")
     parser.add_argument("--output", default="output")
@@ -18,6 +18,11 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--max-attempts", type=int, default=5)
     args = parser.parse_args()
+
+    if args.command == "obsidian-normalize":
+        result = normalize_vault(args.output, apply=getattr(args, "apply", False))
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
 
     if args.command == "obsidian-audit":
         report = audit_vault(args.output)
