@@ -74,3 +74,41 @@ def normalize_vault(root, apply=False):
             if apply:
                 path.write_text(new_text, encoding="utf-8")
     return {"applied": apply, "changes": changes, "audit_before": report}
+
+
+def build_entity_merge_plan(root):
+    """Build conservative duplicate-entity candidates without mutating the vault."""
+    root = Path(root)
+    groups = {}
+    for path in _iter_markdown(root / "entities"):
+        parts = path.relative_to(root / "entities").parts
+        if len(parts) < 2 or parts[0].startswith("_") or path.name.startswith("_"):
+            continue
+        domain = parts[0]
+        stem = path.stem
+        key = re.sub(r"[^0-9a-z가-힣]+", " ", stem.casefold()).strip()
+        key = re.sub(r"\s+", " ", key)
+        groups.setdefault((domain, key), []).append(path)
+
+    candidates = []
+    for (domain, key), paths in sorted(groups.items()):
+        if len(paths) < 2:
+            continue
+        candidates.append({
+            "domain": domain,
+            "normalized_key": key,
+            "candidates": [str(p.relative_to(root)) for p in sorted(paths)],
+            "action": "REVIEW",
+            "reason": "same normalized entity name; no automatic merge performed",
+        })
+    return {
+        "status": "REVIEW" if candidates else "CLEAN",
+        "candidate_count": len(candidates),
+        "candidates": candidates,
+    }
+
+
+def write_merge_plan(plan, path):
+    out = Path(path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
