@@ -53,6 +53,9 @@ def test_entity_merge_apply_keeps_canonical_and_backs_up_duplicate(tmp_path: Pat
     preview = apply_entity_merge_plan(root, plan)
     assert preview["status"] == "PLANNED"
     assert (people / "David  Bowie.md").exists()
+    assert preview["rewrites"][0]["rewrites"] == [
+        {"from": "David  Bowie", "to": "David Bowie"}
+    ]
     result = apply_entity_merge_plan(root, plan, apply=True)
     assert result["status"] == "APPLIED"
     assert (people / "David Bowie.md").exists()
@@ -62,6 +65,28 @@ def test_entity_merge_apply_keeps_canonical_and_backs_up_duplicate(tmp_path: Pat
     manifest = (root / ".nayvadius-backup" / "manifest.json").read_text(encoding="utf-8")
     assert '"operation": "entity_merge"' in manifest
     assert apply_entity_merge_plan(root, plan, apply=True)["changed"] == 0
+
+
+def test_review_only_merge_apply_is_a_noop(tmp_path: Path):
+    from nayvadius.obsidian_audit import apply_entity_merge_plan
+
+    root = tmp_path / "vault"
+    people = root / "entities" / "People"
+    people.mkdir(parents=True)
+    note = people / "Possible Duplicate.md"
+    note.write_text("# Keep unchanged\n", encoding="utf-8")
+    plan = {
+        "candidates": [{
+            "action": "REVIEW",
+            "candidates": ["entities/People/Possible Duplicate.md"],
+        }]
+    }
+
+    result = apply_entity_merge_plan(root, plan, apply=True)
+    assert result["status"] == "REVIEW"
+    assert result["changed"] == 0
+    assert note.read_text(encoding="utf-8") == "# Keep unchanged\n"
+    assert not (root / ".nayvadius-backup").exists()
 
 
 def test_merge_plan_classifies_metadata_conflicts_and_cross_domain_names(tmp_path: Path):
@@ -109,6 +134,9 @@ def test_normalize_dry_run_does_not_modify_and_apply_rewrites(tmp_path: Path):
     note.write_text("[[david bowie#Early life|Founder]] [[Unrelated]]\n", encoding="utf-8")
     dry = normalize_vault(root)
     assert dry["applied"] is False and dry["changes"]
+    assert dry["changes"][0]["rewrites"] == [
+        {"from": "david bowie#Early life|Founder", "to": "David Bowie#Early life|Founder"}
+    ]
     assert note.read_text(encoding="utf-8") == "[[david bowie#Early life|Founder]] [[Unrelated]]\n"
     done = normalize_vault(root, apply=True)
     assert done["applied"] is True

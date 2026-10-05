@@ -343,8 +343,9 @@ def write_audit_report(report: dict, path: str | Path) -> None:
     out.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def _rewrite_target(text: str, replacements: dict[str, str]) -> tuple[str, int]:
+def _rewrite_target(text: str, replacements: dict[str, str]) -> tuple[str, int, list[dict]]:
     count = 0
+    rewrites = []
 
     def replace(match: re.Match) -> str:
         nonlocal count
@@ -353,9 +354,11 @@ def _rewrite_target(text: str, replacements: dict[str, str]) -> tuple[str, int]:
         if not new_target or new_target == parsed["target"]:
             return match.group(0)
         count += 1
-        return match.group(1) + "[[" + _format_wikilink(parsed, new_target) + "]]"
+        formatted = _format_wikilink(parsed, new_target)
+        rewrites.append({"from": match.group(2), "to": formatted})
+        return match.group(1) + "[[" + formatted + "]]"
 
-    return WIKILINK_RE.sub(replace, text), count
+    return WIKILINK_RE.sub(replace, text), count, rewrites
 
 
 def normalize_vault(root: str | Path, apply: bool = False) -> dict:
@@ -379,13 +382,14 @@ def normalize_vault(root: str | Path, apply: bool = False) -> dict:
     planned_text: dict[Path, str] = {}
     for path in files:
         original = path.read_text(encoding="utf-8")
-        updated, count = _rewrite_target(original, replacements)
+        updated, count, rewrites = _rewrite_target(original, replacements)
         if not count or updated == original:
             continue
         relative = path.relative_to(root).as_posix()
         changes.append({
             "file": relative, "count": count,
             "original_hash": _sha256(original), "new_hash": _sha256(updated),
+            "rewrites": rewrites,
         })
         planned_text[path] = updated
 
@@ -534,6 +538,8 @@ def write_merge_plan(plan: dict, path: str | Path) -> None:
 
 
 def _safe_plan_path(root: Path, relative: str) -> Path | None:
+    if not isinstance(relative, str) or not relative:
+        return None
     candidate = Path(relative)
     if candidate.is_absolute() or ".." in candidate.parts:
         return None
@@ -570,6 +576,9 @@ def apply_entity_merge_plan(
     root = Path(root)
     would_merge, applied, skipped = [], [], []
     for item in plan.get("candidates", []):
+        if not isinstance(item, dict):
+            skipped.append({"item": item, "reason": "candidate is invalid"})
+            continue
         paths = item.get("candidates", [])
         if item.get("action") != "AUTO":
             skipped.append({"item": item, "reason": "REVIEW and SKIP candidates require human handling"})
@@ -582,7 +591,7 @@ def apply_entity_merge_plan(
             skipped.append({"item": item, "reason": "candidate path is invalid or missing"})
             continue
         expected = item.get("file_hashes", {})
-        if not expected or any(
+        if not isinstance(expected, dict) or not expected or any(
             _sha256(path.read_bytes()) != expected.get(relative)
             for relative, path in zip(paths, resolved)
         ):
@@ -604,18 +613,6 @@ def apply_entity_merge_plan(
                 "rewrite_target": canonical.stem,
             })
 
-    if not apply:
-        return {
-            "status": "PLANNED" if would_merge else ("REVIEW" if skipped else "CLEAN"),
-            "applied": [], "would_merge": would_merge, "skipped": skipped,
-            "changed": 0,
-            "summary": {"scanned": len(plan.get("candidates", [])),
-                        "clean": 0, "warning": 0, "review": len(skipped),
-                        "error": 0, "changed": 0, "skipped": len(skipped)},
-        }
-
-    operation = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    backup_root = root / backup_dir
     replacements: dict[str, str] = {}
     merge_rows = []
     for merge in would_merge:
@@ -623,17 +620,38 @@ def apply_entity_merge_plan(
         replacements[normalize_entity_name(duplicate.stem)] = merge["rewrite_target"]
         merge_rows.append(merge)
 
-    rewritten: dict[Path, tuple[str, str]] = {}
+    rewritten: dict[Path, tuple[str, str, list[dict]]] = {}
     duplicate_paths = {merge["merged"] for merge in merge_rows}
     for path in _iter_markdown(root):
         relative = path.relative_to(root).as_posix()
         if relative in duplicate_paths:
             continue
         original = path.read_text(encoding="utf-8")
-        updated, count = _rewrite_target(original, replacements)
+        updated, count, links = _rewrite_target(original, replacements)
         if count and updated != original:
-            rewritten[path] = (original, updated)
+            rewritten[path] = (original, updated, links)
 
+    rewrite_plan = [
+        {
+            "file": path.relative_to(root).as_posix(),
+            "original_hash": _sha256(original),
+            "new_hash": _sha256(updated),
+            "rewrites": links,
+        }
+        for path, (original, updated, links) in rewritten.items()
+    ]
+    if not apply:
+        return {
+            "status": "PLANNED" if would_merge else ("REVIEW" if skipped else "CLEAN"),
+            "applied": [], "would_merge": would_merge, "rewrites": rewrite_plan,
+            "skipped": skipped, "changed": 0,
+            "summary": {"scanned": len(plan.get("candidates", [])),
+                        "clean": 0, "warning": 0, "review": len(skipped),
+                        "error": 0, "changed": 0, "skipped": len(skipped)},
+        }
+
+    operation = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    backup_root = root / backup_dir
     destinations = [backup_root / merge["merged"] for merge in merge_rows]
     destinations.extend(
         backup_root / "rewrites" / operation / path.relative_to(root)
@@ -661,7 +679,7 @@ def apply_entity_merge_plan(
                 "original_hash": _sha256(original.read_bytes()),
                 "new_hash": None,
             })
-        for path, (original, updated) in rewritten.items():
+        for path, (original, updated, _) in rewritten.items():
             backup = backup_root / "rewrites" / operation / path.relative_to(root)
             backup.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, backup)
@@ -672,7 +690,7 @@ def apply_entity_merge_plan(
                 "backup_path": backup.relative_to(root).as_posix(),
                 "original_hash": _sha256(original), "new_hash": _sha256(updated),
             })
-        for path, (_, updated) in rewritten.items():
+        for path, (_, updated, _) in rewritten.items():
             temp = path.with_suffix(path.suffix + ".nayvadius.tmp")
             temp.write_text(updated, encoding="utf-8")
             temp.replace(path)
@@ -681,7 +699,7 @@ def apply_entity_merge_plan(
         if manifest:
             _append_backup_manifest(backup_root, manifest)
     except Exception:
-        for path, (original, _) in rewritten.items():
+        for path, (original, _, _) in rewritten.items():
             path.write_text(original, encoding="utf-8")
         for merge in merge_rows:
             backup = backup_root / merge["merged"]
@@ -691,9 +709,10 @@ def apply_entity_merge_plan(
 
     applied.extend(merge_rows)
     return {
-        "status": "APPLIED",
+        "status": "APPLIED" if applied else ("REVIEW" if skipped else "CLEAN"),
         "applied": applied,
         "would_merge": would_merge,
+        "rewrites": rewrite_plan,
         "skipped": skipped,
         "changed": len(applied) + len(rewritten),
         "backup_manifest": (backup_root / "manifest.json").relative_to(root).as_posix() if manifest else None,
