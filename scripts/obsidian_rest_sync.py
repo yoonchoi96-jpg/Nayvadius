@@ -192,6 +192,13 @@ def run(args: argparse.Namespace) -> dict:
         plan = build_entity_merge_plan(mirror_root)
         merge_result = apply_entity_merge_plan(mirror_root, plan, apply=True)
 
+        after = snapshot_local(mirror_root)
+        backup_root = args.backup_root.rstrip("/")
+        remote_changes = apply_remote_changes(api, before, after, backup_root)
+
+        # Update the canonical DB only after every remote vault write/delete has
+        # succeeded. This prevents a failed live write from leaving DB state ahead
+        # of the actual vault.
         db_merges = []
         for item in merge_result.get("applied", []):
             canonical = Path(item["canonical"]).stem
@@ -209,10 +216,6 @@ def run(args: argparse.Namespace) -> dict:
                     "entity_type": entity_type,
                     "merged": merged,
                 })
-
-        after = snapshot_local(mirror_root)
-        backup_root = args.backup_root.rstrip("/")
-        remote_changes = apply_remote_changes(api, before, after, backup_root)
 
         # Re-mirror after writes so the final report describes the actual vault state.
         final_root = Path(temp) / "final"
