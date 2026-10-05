@@ -134,7 +134,8 @@ def apply_entity_merge_plan(root, plan, backup_dir=".nayvadius-backup"):
         if item.get("domain") not in ENTITY_TYPES:
             skipped.append({"item": item, "reason": "unknown entity domain"})
             continue
-        paths = sorted(p for p in paths if p.exists())
+        # Prefer a cleanly spaced stem as canonical; fall back to path order.
+        paths = sorted((p for p in paths if p.exists()), key=lambda p: (p.stem != " ".join(p.stem.split()), str(p)))
         if len(paths) < 2:
             skipped.append({"item": item, "reason": "candidate files changed or disappeared"})
             continue

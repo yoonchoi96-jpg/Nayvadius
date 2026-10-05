@@ -56,3 +56,30 @@ def test_entity_merge_apply_keeps_canonical_and_backs_up_duplicate(tmp_path: Pat
     assert not (people / "David  Bowie.md").exists()
     assert (root / ".nayvadius-backup" / "entities" / "People" / "David  Bowie.md").exists()
     assert note.read_text(encoding="utf-8") == "[[David Bowie]]\n"
+
+
+def test_normalize_dry_run_does_not_modify_and_apply_rewrites(tmp_path: Path):
+    from nayvadius.obsidian_audit import normalize_vault
+    root = tmp_path / "vault"
+    people = root / "entities" / "People"
+    people.mkdir(parents=True)
+    (people / "David Bowie.md").write_text("# x\n", encoding="utf-8")
+    note = root / "note.md"
+    note.write_text("[[david bowie]] [[Unrelated]]\n", encoding="utf-8")
+    dry = normalize_vault(root)
+    assert dry["applied"] is False and dry["changes"]
+    assert note.read_text(encoding="utf-8") == "[[david bowie]] [[Unrelated]]\n"
+    done = normalize_vault(root, apply=True)
+    assert done["applied"] is True
+    assert note.read_text(encoding="utf-8") == "[[David Bowie]] [[Unrelated]]\n"
+
+
+def test_cli_exposes_apply_flag(capsys):
+    import sys
+    from nayvadius import cli
+    sys.argv = ["nayvadius", "obsidian-normalize", "--help"]
+    try:
+        cli.main()
+    except SystemExit:
+        pass
+    assert "--apply" in capsys.readouterr().out

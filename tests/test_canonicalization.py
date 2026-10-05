@@ -163,3 +163,15 @@ def test_relation_and_save_result_integration(tmp_path, monkeypatch):
     assert docs == [("David Bowie",)] and src == [("David Bowie",)]
     assert {"bowie", "david robert jones", "david bowie"} <= aliases
     assert "David Robert Jones" not in _names()
+
+
+def test_alias_persistence_and_relation_semantics(tmp_path, monkeypatch):
+    monkeypatch.setattr("nayvadius.config.settings.state_path", str(tmp_path / "state.db"))
+    _save("1", [Entity("David Bowie", "People", 0.9, ("Bowie",))])
+    _save("2", [Entity("David Robert Jones", "People", 0.9, ("Ziggy Stardust",)), Entity("Brian Eno", "People", 0.9, ())],
+          [Relation("David Robert Jones", "collaborated_with", "Brian Eno")])
+    with connect() as db:
+        row = db.execute("SELECT name,aliases FROM entities WHERE name='David Bowie'").fetchone()
+        rel = db.execute("SELECT source_name,relation,target_name FROM document_relations WHERE document_id='2'").fetchone()
+    assert "Ziggy Stardust" in row[1] and "Bowie" in row[1]
+    assert rel == ("David Bowie", "collaborated_with", "Brian Eno")
