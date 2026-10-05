@@ -74,10 +74,20 @@ def test_merge_plan_classifies_metadata_conflicts_and_cross_domain_names(tmp_pat
     orgs = root / "entities" / "Organizations"
     orgs.mkdir(parents=True)
     (orgs / "JANE DOE.md").write_text("# organization\n", encoding="utf-8")
+    (people / "Jane Doe.md").write_text(
+        "---\nname: Jane Doe\naliases: [Janie]\n---\n", encoding="utf-8"
+    )
+    (people / "Janie.md").write_text("# alias target\n", encoding="utf-8")
+    (people / "John Doe.md").write_text(
+        "---\nname: John Doe\naliases: [Same]\n---\n", encoding="utf-8"
+    )
+    (people / "Jon Doe.md").write_text(
+        "---\nname: Jon Doe\naliases: [Same]\n---\n", encoding="utf-8"
+    )
 
     plan = build_entity_merge_plan(root)
-    assert plan["counts"]["REVIEW"] == 1
-    assert plan["counts"]["SKIP"] == 1
+    assert plan["counts"]["REVIEW"] == 2
+    assert plan["counts"]["SKIP"] == 2
     assert {candidate["action"] for candidate in plan["candidates"]} == {"REVIEW", "SKIP"}
 
 
@@ -155,7 +165,21 @@ def test_db_vault_maintenance_reports_both_sides_without_mutating(tmp_path: Path
     assert report["summary"]["db_only_entities"] == 1
     assert report["db_consistency"]["db_entities_missing_canonical_files"][0]["name"] == "Bob"
     assert report["db_consistency"]["db_relations_missing_db_endpoints"]
+    assert report["summary"]["obsidian_only_entities"] == 1
+    assert report["db_consistency"]["links_to_entities_absent_from_db"][0]["target"] == "Alice"
     assert report["summary"]["unresolved_links"] == 1
+
+
+def test_audit_flags_wrong_domain_link_and_punctuation_only_entity(tmp_path: Path):
+    root = tmp_path / "vault"
+    (root / "entities" / "People").mkdir(parents=True)
+    (root / "entities" / "People" / "Alice.md").write_text("# Alice\n", encoding="utf-8")
+    (root / "entities" / "Concepts" / "!!!.md").parent.mkdir(parents=True)
+    (root / "entities" / "Concepts" / "!!!.md").write_text("# Empty name\n", encoding="utf-8")
+    (root / "note.md").write_text("[[entities/Places/Alice]]\n", encoding="utf-8")
+    report = audit_vault(root)
+    assert any("contains no letters or digits" in error for error in report["errors"])
+    assert "wrong_entity_domain_link" in {warning["kind"] for warning in report["warnings"]}
 
 
 def test_cli_exposes_apply_flag(capsys):

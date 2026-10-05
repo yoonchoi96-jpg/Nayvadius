@@ -202,6 +202,21 @@ def audit_vault(root: str | Path) -> dict:
         )
         warnings.append({"kind": kind, "normalized_name": normalized, "files": names})
 
+    alias_groups: dict[tuple[str, str], list[dict]] = {}
+    for entity in entities:
+        for alias, display in entity["aliases"].items():
+            if alias and alias != entity["normalized"]:
+                alias_groups.setdefault((entity["domain"], alias), []).append(entity)
+    for (domain, alias), items in sorted(alias_groups.items()):
+        unique = {item["normalized"]: item for item in items}
+        if len(unique) > 1:
+            warnings.append({
+                "kind": "duplicate_entity_alias",
+                "alias": alias,
+                "entity_type": domain,
+                "files": sorted(item["relative"] for item in unique.values()),
+            })
+
     for path in files:
         try:
             text = path.read_text(encoding="utf-8")
@@ -214,10 +229,12 @@ def audit_vault(root: str | Path) -> dict:
             if not target or target.startswith(("http://", "https://")):
                 continue
             target_key = normalize_entity_name(target)
+            target_parts = Path(target).parts
             candidates = index.get(target_key, [])
+            if len(target_parts) >= 3 and target_parts[0] == "entities" and not candidates:
+                candidates = index.get(normalize_entity_name(Path(target_parts[-1]).stem), [])
             source = path.resolve()
             unique_paths = sorted({item["path"] for item in candidates})
-            target_parts = Path(target).parts
             expected_domain = None
             if len(target_parts) >= 3 and target_parts[0] == "entities":
                 requested_domain = target_parts[1]
@@ -471,6 +488,26 @@ def build_entity_merge_plan(root: str | Path) -> dict:
                 domain, alias, items, "SKIP",
                 "alias resolves to multiple distinct canonical entities",
             ))
+
+    name_index = {
+        (item["domain"], item["normalized"]): item
+        for item in entities if item["normalized"]
+    }
+    review_pairs = set()
+    for item in entities:
+        for alias in item["aliases"]:
+            target = name_index.get((item["domain"], alias))
+            if target and target["path"] != item["path"]:
+                pair = tuple(sorted((item["relative"], target["relative"])))
+                review_pairs.add(pair)
+    for first, second in sorted(review_pairs):
+        first_item = next(item for item in entities if item["relative"] == first)
+        second_item = next(item for item in entities if item["relative"] == second)
+        candidates.append(_candidate_item(
+            first_item["domain"], first_item["normalized"],
+            [first_item, second_item], "REVIEW",
+            "an explicit alias points to another entity name; review before merging",
+        ))
 
     candidates.sort(key=lambda item: (item["action"], item["domain"], item["normalized_key"]))
     actions = [item["action"] for item in candidates]
