@@ -11,17 +11,30 @@ def _norm_alias(value):
     return re.sub(r"[\s\u3000]+", " ", value)
 
 def _canonical_entity(db, entity):
-    matches = []
+    """Resolve to an existing canonical name within the same entity_type.
+
+    Unique match -> canonical name; ambiguous or no match -> incoming name.
+    """
+    candidates = set()
+    norms = set()
     for value in [entity.name, *entity.aliases]:
         alias = _norm_alias(value)
-        if alias:
-            matches.extend(db.execute(
-                "SELECT canonical_name,entity_type FROM entity_aliases WHERE alias=?",
-                (alias,),
-            ).fetchall())
-    unique = list(dict.fromkeys(matches))
-    if len(unique) == 1 and unique[0][1] == entity.entity_type:
-        return unique[0][0]
+        if not alias:
+            continue
+        norms.add(alias)
+        for (canonical_name,) in db.execute(
+            "SELECT canonical_name FROM entity_aliases WHERE alias=? AND entity_type=?",
+            (alias, entity.entity_type),
+        ).fetchall():
+            candidates.add(canonical_name)
+    if norms:
+        for (name,) in db.execute(
+            "SELECT name FROM entities WHERE entity_type=?", (entity.entity_type,)
+        ).fetchall():
+            if _norm_alias(name) in norms:
+                candidates.add(name)
+    if len(candidates) == 1:
+        return next(iter(candidates))
     return entity.name
 
 def _merge_aliases(db, canonical_name, entity_type, aliases):
@@ -43,7 +56,16 @@ def _resolve_relation_endpoint(db, value):
         (alias,),
     ).fetchall()
     unique = list(dict.fromkeys(rows))
-    return unique[0][0] if len(unique) == 1 else value
+    if len(unique) == 1:
+        return unique[0][0]
+    if not unique:
+        names = list(dict.fromkeys(
+            r for r in db.execute("SELECT name,entity_type FROM entities").fetchall()
+            if _norm_alias(r[0]) == alias
+        ))
+        if len(names) == 1:
+            return names[0][0]
+    return value
 
 def _result_payload(result):
     return json.dumps({
@@ -218,7 +240,10 @@ def save_result(result):
         for e in result.entities:
             name = _canonical_entity(db, e)
             canonical[e.name] = name
-            aliases = _merge_aliases(db, name, e.entity_type, e.aliases)
+            canonical.setdefault(_norm_alias(e.name), name)
+            extra = (e.name,) if _norm_alias(e.name) != _norm_alias(name) else ()
+            all_aliases = [*e.aliases, *extra]
+            aliases = _merge_aliases(db, name, e.entity_type, all_aliases)
             db.execute(
                 """INSERT INTO entities(name,entity_type,aliases,confidence) VALUES(?,?,?,?)
                    ON CONFLICT(name,entity_type) DO UPDATE SET
@@ -230,7 +255,7 @@ def save_result(result):
                 "INSERT OR IGNORE INTO entity_aliases(alias,canonical_name,entity_type) VALUES(?,?,?)",
                 (_norm_alias(name), name, e.entity_type),
             )
-            for alias in e.aliases:
+            for alias in all_aliases:
                 if _norm_alias(alias):
                     db.execute(
                         "INSERT OR IGNORE INTO entity_aliases(alias,canonical_name,entity_type) VALUES(?,?,?)",
@@ -255,8 +280,8 @@ def save_result(result):
                 )
 
         for x in result.relations:
-            source = canonical.get(x.source) or _resolve_relation_endpoint(db, x.source)
-            target = canonical.get(x.target) or _resolve_relation_endpoint(db, x.target)
+            source = canonical.get(x.source) or canonical.get(_norm_alias(x.source)) or _resolve_relation_endpoint(db, x.source)
+            target = canonical.get(x.target) or canonical.get(_norm_alias(x.target)) or _resolve_relation_endpoint(db, x.target)
             db.execute(
                 "INSERT OR REPLACE INTO relations VALUES(?,?,?,?)",
                 (source, x.relation, target, x.confidence),

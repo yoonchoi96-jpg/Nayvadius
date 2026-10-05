@@ -119,7 +119,7 @@ def write_notion_manifest(db, root: str) -> str:
     if _table_exists(db, "source_bridge_links"):
         for name, entity_type, source_a, source_b, confidence, rule, provenance in db.execute(
             "SELECT entity_name,entity_type,source_a,source_b,confidence,rule,provenance "
-            "FROM source_bridge_links ORDER BY entity_type,name,source_a,source_b"
+            "FROM source_bridge_links ORDER BY entity_type,entity_name,source_a,source_b"
         ):
             relations.append({
                 "id": _page_id("source_bridge", f"{entity_type}:{name}:{source_a}:{source_b}:{rule}"),
