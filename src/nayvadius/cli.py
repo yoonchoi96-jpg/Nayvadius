@@ -37,6 +37,7 @@ def main() -> None:
     parser.add_argument("--apply", action="store_true", default=False)
     parser.add_argument("--max-attempts", type=int, default=5)
     parser.add_argument("--snapshot", default="")
+    parser.add_argument("--plan", default="")
     args = parser.parse_args()
 
     if args.command == "db-reconcile-plan":
@@ -62,7 +63,7 @@ def main() -> None:
         return
 
     if args.command == "db-reconcile-verify":
-        plan_path = Path(args.snapshot or (str(args.output).rstrip("/") + "/db_reconciliation_plan.json"))
+        plan_path = Path(args.plan or (str(args.output).rstrip("/") + "/db_reconciliation_plan.json"))
         with plan_path.open(encoding="utf-8") as fh:
             plan = json.load(fh)
         result = validate_db_reconciliation_plan(plan, root=args.output)
