@@ -11,6 +11,7 @@ def _db(path, rows):
         conn.execute("CREATE TABLE documents(id TEXT, title TEXT, content_hash TEXT, source TEXT)")
         conn.execute("CREATE TABLE document_entities(document_id TEXT, entity_name TEXT, entity_type TEXT)")
         conn.execute("CREATE TABLE entity_aliases(alias TEXT NOT NULL, canonical_name TEXT NOT NULL, entity_type TEXT NOT NULL)")
+        conn.execute("CREATE TABLE entities(name TEXT, entity_type TEXT, aliases TEXT)")
         conn.executemany("INSERT INTO documents VALUES(?,?,?,?)", rows)
 
 
@@ -141,6 +142,32 @@ def test_move_is_review_when_db_entity_has_no_canonical_vault_file(tmp_path: Pat
     plan = build_db_reconciliation_plan(previous, snapshot_vault(root), db, vault_root=root)
     assert plan["summary"]["auto"] == 0
     assert plan["review"][0]["db_check"] == "DB identity matched but canonical entity/link resolution is incomplete"
+
+
+def test_entity_table_alias_metadata_resolves_to_canonical(tmp_path: Path):
+    db = tmp_path / "state.db"
+    _db(db, [("doc-1", "Note", _hash("same"), "readwise")])
+    with sqlite3.connect(db) as conn:
+        conn.execute("INSERT INTO document_entities VALUES('doc-1','Microsoft','Organizations')")
+        conn.execute(
+            "INSERT INTO entities VALUES('Microsoft','Organizations','[\"MSFT\"]')"
+        )
+
+    root = tmp_path / "vault"
+    (root / "entities" / "Organizations").mkdir(parents=True)
+    (root / "entities" / "Organizations" / "MSFT.md").write_text(
+        "---\nname: MSFT\n---\n", encoding="utf-8"
+    )
+    (root / "note.md").write_text("[[MSFT]]", encoding="utf-8")
+    previous = snapshot_vault(root)
+    (root / "note.md").rename(root / "renamed.md")
+
+    plan = build_db_reconciliation_plan(previous, snapshot_vault(root), db, vault_root=root)
+
+    assert plan["summary"]["auto"] == 1
+    resolution = plan["auto"][0]["entity_resolution"]["resolved"][0]
+    assert resolution["resolution_method"] == "db_alias"
+    assert resolution["canonical_name"] == "MSFT"
 
 
 def test_move_resolves_db_entity_alias_to_canonical_vault_entity(tmp_path: Path):
