@@ -120,10 +120,10 @@ def test_vault_organization_apply_rejects_duplicate_targets_in_plan(tmp_path: Pa
     }
     result = apply_vault_organization_plan(root, plan, apply=True)
 
-    assert result["status"] == "APPLIED"
-    assert first.exists() is False
+    assert result["status"] == "REVIEW"
+    assert first.exists()
     assert second.exists()
-    assert (root / target).read_text(encoding="utf-8") == "# Alice\n"
+    assert not (root / target).exists()
     assert any(item.get("reason") == "duplicate source or target in plan" for item in result["skipped"])
 
 
@@ -144,9 +144,9 @@ def test_vault_organization_apply_rejects_source_target_collision_in_plan(tmp_pa
     }
     result = apply_vault_organization_plan(root, plan, apply=True)
 
-    assert result["status"] == "APPLIED"
-    assert first.exists() is False
+    assert result["status"] == "REVIEW"
+    assert first.exists()
     assert second.exists()
-    assert (root / "20_Entities" / "People" / "Bob.md").read_text(encoding="utf-8") == "# Alice\n"
+    assert (root / "20_Entities" / "People" / "Bob.md").read_text(encoding="utf-8") == "# Bob\n"
     assert not (root / "20_Entities" / "People" / "Carol.md").exists()
     assert any(item.get("reason") == "move collision between planned source and target" for item in result["skipped"])
