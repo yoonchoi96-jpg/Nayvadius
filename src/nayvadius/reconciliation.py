@@ -73,7 +73,18 @@ def _vault_entity_index(root):
     return index
 
 
-def _resolve_db_entities(db_entities, vault_entities, db_aliases=None):
+def _vault_canonical_index(root):
+    entities, _, _ = _entity_files(Path(root))
+    index = {}
+    for entity in entities:
+        index.setdefault(
+            (entity["domain"], normalize_entity_name(entity["name"])),
+            [],
+        ).append(entity)
+    return index
+
+
+def _resolve_db_entities(db_entities, vault_entities, db_aliases=None, canonical_vault_entities=None):
     """Resolve DB entity references to one canonical Obsidian entity file.
 
     Resolution is intentionally conservative:
@@ -82,12 +93,13 @@ def _resolve_db_entities(db_entities, vault_entities, db_aliases=None):
     missing, conflicting, or type-mismatched mapping remains REVIEW.
     """
     db_aliases = db_aliases or {}
+    canonical_vault_entities = canonical_vault_entities or vault_entities
     resolved, unresolved = [], []
 
     for name, entity_type in db_entities:
         direct = {
             x["relative"]: x
-            for x in vault_entities.get((entity_type, normalize_entity_name(name)), [])
+            for x in canonical_vault_entities.get((entity_type, normalize_entity_name(name)), [])
         }
         if len(direct) == 1:
             entity = next(iter(direct.values()))
@@ -208,6 +220,7 @@ def build_db_reconciliation_plan(previous: dict, current: dict, db_path: str | P
     )
     auto, review, skipped = [], [], []
     vault_entities = _vault_entity_index(vault_root) if vault_root else {}
+    canonical_vault_entities = _vault_canonical_index(vault_root) if vault_root else {}
 
     for item in diff["moved"]:
         matches = _hash_matches(db_index, item["hash"])
@@ -218,6 +231,7 @@ def build_db_reconciliation_plan(previous: dict, current: dict, db_path: str | P
                     matches[0]["entities"],
                     vault_entities,
                     db_index["aliases"],
+                    canonical_vault_entities,
                 )
                 if vault_root
                 else {"resolved": [], "unresolved": []}
