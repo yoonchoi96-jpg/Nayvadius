@@ -38,6 +38,8 @@ def apply_db_reconciliation_plan(root: str | Path, plan: dict, backup_dir: str =
         if len(expected) != 64 or _sha256(source.read_bytes()) != expected:
             skipped.append({"item": item, "reason": "source changed since reconciliation plan"}); continue
         if target.exists():
+        if target.suffix.lower() != ".md":
+            skipped.append({"item": item, "reason": "target is not markdown"}); continue
             skipped.append({"item": item, "reason": "target now exists"}); continue
         candidates.append((item, source, target))
 
