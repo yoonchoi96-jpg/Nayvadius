@@ -251,3 +251,110 @@ def test_db_alias_type_mismatch_does_not_resolve(tmp_path: Path):
     assert plan["summary"]["auto"] == 0
     unresolved = plan["review"][0]["entity_resolution"]["unresolved"][0]
     assert unresolved["reason"] == "no canonical Obsidian entity file or DB alias match"
+
+
+def test_db_alias_resolution_records_explicit_alias_source(tmp_path: Path):
+    db = tmp_path / "state.db"
+    _db(db, [("doc-1", "Note", _hash("same"), "readwise")])
+    with sqlite3.connect(db) as conn:
+        conn.execute("INSERT INTO document_entities VALUES('doc-1','Acme','Organizations')")
+        conn.execute(
+            "INSERT INTO entity_aliases VALUES('Acme','Acme Corporation','Organizations')"
+        )
+
+    root = tmp_path / "vault"
+    (root / "entities" / "Organizations").mkdir(parents=True)
+    (root / "entities" / "Organizations" / "Acme Corporation.md").write_text(
+        "---\nname: Acme Corporation\n---\n", encoding="utf-8"
+    )
+    (root / "note.md").write_text("[[Acme Corporation]]", encoding="utf-8")
+    previous = snapshot_vault(root)
+    (root / "note.md").rename(root / "renamed.md")
+
+    plan = build_db_reconciliation_plan(previous, snapshot_vault(root), db, vault_root=root)
+    resolution = plan["auto"][0]["entity_resolution"]["resolved"][0]
+
+    assert resolution["resolution_method"] == "db_alias"
+    assert resolution["alias_sources"] == ["entity_aliases"]
+
+
+def test_entity_table_alias_resolution_records_metadata_alias_source(tmp_path: Path):
+    db = tmp_path / "state.db"
+    _db(db, [("doc-1", "Note", _hash("same"), "readwise")])
+    with sqlite3.connect(db) as conn:
+        conn.execute("INSERT INTO document_entities VALUES('doc-1','Acme','Organizations')")
+        conn.execute(
+            "INSERT INTO entities VALUES('Acme','Organizations','[\"Acme Corporation\"]')"
+        )
+
+    root = tmp_path / "vault"
+    (root / "entities" / "Organizations").mkdir(parents=True)
+    (root / "entities" / "Organizations" / "Acme Corporation.md").write_text(
+        "---\nname: Acme Corporation\n---\n", encoding="utf-8"
+    )
+    (root / "note.md").write_text("[[Acme Corporation]]", encoding="utf-8")
+    previous = snapshot_vault(root)
+    (root / "note.md").rename(root / "renamed.md")
+
+    plan = build_db_reconciliation_plan(previous, snapshot_vault(root), db, vault_root=root)
+    resolution = plan["auto"][0]["entity_resolution"]["resolved"][0]
+
+    assert resolution["resolution_method"] == "db_alias"
+    assert resolution["alias_sources"] == ["entities.aliases"]
+
+
+def test_matching_alias_sources_are_both_recorded(tmp_path: Path):
+    db = tmp_path / "state.db"
+    _db(db, [("doc-1", "Note", _hash("same"), "readwise")])
+    with sqlite3.connect(db) as conn:
+        conn.execute("INSERT INTO document_entities VALUES('doc-1','Acme','Organizations')")
+        conn.execute(
+            "INSERT INTO entity_aliases VALUES('Acme','Acme Corporation','Organizations')"
+        )
+        conn.execute(
+            "INSERT INTO entities VALUES('Acme','Organizations','[\"Acme Corporation\"]')"
+        )
+
+    root = tmp_path / "vault"
+    (root / "entities" / "Organizations").mkdir(parents=True)
+    (root / "entities" / "Organizations" / "Acme Corporation.md").write_text(
+        "---\nname: Acme Corporation\n---\n", encoding="utf-8"
+    )
+    (root / "note.md").write_text("[[Acme Corporation]]", encoding="utf-8")
+    previous = snapshot_vault(root)
+    (root / "note.md").rename(root / "renamed.md")
+
+    plan = build_db_reconciliation_plan(previous, snapshot_vault(root), db, vault_root=root)
+    resolution = plan["auto"][0]["entity_resolution"]["resolved"][0]
+
+    assert resolution["alias_sources"] == ["entities.aliases", "entity_aliases"]
+
+
+def test_conflicting_alias_sources_force_review(tmp_path: Path):
+    db = tmp_path / "state.db"
+    _db(db, [("doc-1", "Note", _hash("same"), "readwise")])
+    with sqlite3.connect(db) as conn:
+        conn.execute("INSERT INTO document_entities VALUES('doc-1','Acme','Organizations')")
+        conn.execute(
+            "INSERT INTO entity_aliases VALUES('Acme','Acme Holdings','Organizations')"
+        )
+        conn.execute(
+            "INSERT INTO entities VALUES('Acme','Organizations','[\"Acme Corp\"]')"
+        )
+
+    root = tmp_path / "vault"
+    (root / "entities" / "Organizations").mkdir(parents=True)
+    for name in ("Acme Holdings", "Acme Corp"):
+        (root / "entities" / "Organizations" / f"{name}.md").write_text(
+            f"---\nname: {name}\n---\n", encoding="utf-8"
+        )
+    (root / "note.md").write_text("[[Acme Holdings]]", encoding="utf-8")
+    previous = snapshot_vault(root)
+    (root / "note.md").rename(root / "renamed.md")
+
+    plan = build_db_reconciliation_plan(previous, snapshot_vault(root), db, vault_root=root)
+
+    assert plan["summary"]["auto"] == 0
+    entity_check = plan["review"][0]["entity_resolution"]
+    assert entity_check["unresolved"][0]["reason"] == "conflicting DB entity alias mappings"
+    assert entity_check["unresolved"][0]["canonical_names"] == ["Acme Corp", "Acme Holdings"]
