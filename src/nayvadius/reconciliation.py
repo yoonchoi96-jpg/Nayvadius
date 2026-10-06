@@ -218,7 +218,7 @@ def _wikilink_resolution(root, relative_path, vault_entities):
     path = Path(root) / relative_path
     if not path.exists() or path.suffix.lower() != ".md":
         return {"status": "unavailable", "links": [], "unresolved": []}
-    links, unresolved = [], []
+    links, unresolved, non_entity_links = [], [], []
     for match in _wikilink_matches(path.read_text(encoding="utf-8")):
         target = parse_wikilink(match.group(2))["target"]
         if not target or target.startswith(("http://", "https://")):
@@ -231,9 +231,11 @@ def _wikilink_resolution(root, relative_path, vault_entities):
         if len(candidates) == 1:
             item = next(iter(candidates.values()))
             links.append({"target": target, "canonical_file": item["relative"], "entity_type": item["domain"]})
-        else:
+        elif len(candidates) > 1:
             unresolved.append(target)
-    return {"status": "checked", "links": links, "unresolved": sorted(set(unresolved))}
+        else:
+            non_entity_links.append(target)
+    return {"status": "checked", "links": links, "unresolved": sorted(set(unresolved)), "non_entity_links": sorted(set(non_entity_links))}
 
 def _hash_matches(db_index: dict, content_hash: str) -> list[dict]:
     return db_index["by_hash"].get(content_hash, [])
