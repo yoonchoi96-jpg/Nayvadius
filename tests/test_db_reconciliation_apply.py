@@ -37,3 +37,11 @@ def test_target_never_overwritten(tmp_path: Path):
     (tmp_path/"new.md").write_text("different")
     r=apply_db_reconciliation_plan(tmp_path,plan(tmp_path),apply=True)
     assert r["status"]=="REVIEW" and (tmp_path/"new.md").read_text()=="different"
+
+
+def test_wikilink_rewrite_on_apply(tmp_path: Path):
+    (tmp_path / "old.md").write_text("same")
+    (tmp_path / "note.md").write_text("See [[old]].")
+    r = apply_db_reconciliation_plan(tmp_path, plan(tmp_path), apply=True)
+    assert r["status"] == "APPLIED"
+    assert (tmp_path / "note.md").read_text() == "See [[20_Entities/People/New]]."
