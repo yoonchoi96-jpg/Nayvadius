@@ -8,7 +8,7 @@ from pathlib import Path
 from .obsidian_audit import compare_vault_snapshots
 
 
-PLAN_VERSION = 1
+PLAN_VERSION = 2
 
 
 def _fingerprint(plan: dict) -> str:
@@ -27,6 +27,7 @@ def _db_identity_index(db_path: str | Path) -> dict:
         ).fetchall()
 
     by_hash = {}
+    by_id = {}
     for document_id, title, content_hash, source in documents:
         record = {
             "document_id": document_id,
@@ -35,12 +36,8 @@ def _db_identity_index(db_path: str | Path) -> dict:
             "entities": [],
         }
         by_hash.setdefault(content_hash, []).append(record)
+        by_id[document_id] = record
 
-    by_id = {
-        record["document_id"]: record
-        for records in by_hash.values()
-        for record in records
-    }
     for name, entity_type, document_id in entities:
         if document_id in by_id:
             by_id[document_id]["entities"].append((name, entity_type))
@@ -52,6 +49,24 @@ def _db_identity_index(db_path: str | Path) -> dict:
         "document_count": len(documents),
         "entity_links": len(entities),
     }
+
+
+def _hash_matches(db_index: dict, content_hash: str) -> list[dict]:
+    return db_index["by_hash"].get(content_hash, [])
+
+
+def _match_details(matches: list[dict]) -> dict:
+    if len(matches) == 1:
+        match = matches[0]
+        return {
+            "document_id": match["document_id"],
+            "title": match["title"],
+            "source": match["source"],
+            "entities": match["entities"],
+        }
+    if len(matches) > 1:
+        return {"document_ids": sorted(x["document_id"] for x in matches)}
+    return {}
 
 
 def build_db_reconciliation_plan(
@@ -73,7 +88,7 @@ def build_db_reconciliation_plan(
     auto, review, skipped = [], [], []
 
     for item in diff["moved"]:
-        matches = db_index["by_hash"].get(item["hash"], [])
+        matches = _hash_matches(db_index, item["hash"])
         base = {
             "kind": "move",
             "source": item["from"],
@@ -81,14 +96,10 @@ def build_db_reconciliation_plan(
             "hash": item["hash"],
         }
         if len(matches) == 1:
-            match = matches[0]
             auto.append({
                 "action": "AUTO",
                 **base,
-                "document_id": match["document_id"],
-                "title": match["title"],
-                "source": match["source"],
-                "entities": match["entities"],
+                **_match_details(matches),
                 "db_check": "unique DB content_hash match",
                 "reason": "exact content-preserving move with unique DB identity",
             })
@@ -96,7 +107,7 @@ def build_db_reconciliation_plan(
             review.append({
                 "action": "REVIEW",
                 **base,
-                "document_ids": sorted(x["document_id"] for x in matches),
+                **_match_details(matches),
                 "db_check": "ambiguous DB content_hash match",
                 "reason": "multiple DB documents share the same content hash",
             })
@@ -109,40 +120,82 @@ def build_db_reconciliation_plan(
             })
 
     for path in diff["added"]:
-        review.append({
+        matches = _hash_matches(db_index, current["files"][path]["hash"])
+        item = {
             "action": "REVIEW",
             "kind": "added",
             "path": path,
             "hash": current["files"][path]["hash"],
-            "db_check": "new vault note has no prior path identity",
-            "reason": "new note requires entity/document reconciliation",
-        })
+            "reason": "new vault note requires reconciliation before DB linkage",
+        }
+        if len(matches) == 1:
+            item.update(_match_details(matches))
+            item["db_check"] = "hash matches existing DB document; path identity is new"
+        elif len(matches) > 1:
+            item.update(_match_details(matches))
+            item["db_check"] = "hash matches multiple DB documents"
+        else:
+            item["db_check"] = "no DB content_hash match"
+        review.append(item)
 
     for path in diff["deleted"]:
-        review.append({
+        matches = _hash_matches(db_index, previous["files"][path]["hash"])
+        item = {
             "action": "REVIEW",
             "kind": "deleted",
             "path": path,
             "hash": previous["files"][path]["hash"],
-            "db_check": "possible orphaned DB provenance",
-            "reason": "deleted note may leave DB records requiring review",
-        })
+            "reason": "deleted note may leave orphaned DB provenance",
+        }
+        if len(matches) == 1:
+            item.update(_match_details(matches))
+            item["db_check"] = "unique DB document may now be orphaned"
+        elif len(matches) > 1:
+            item.update(_match_details(matches))
+            item["db_check"] = "multiple DB documents share deleted note hash"
+        else:
+            item["db_check"] = "no DB content_hash match"
+        review.append(item)
 
     for path in diff["modified"]:
-        review.append({
+        before_matches = _hash_matches(db_index, previous["files"][path]["hash"])
+        after_matches = _hash_matches(db_index, current["files"][path]["hash"])
+        item = {
             "action": "REVIEW",
             "kind": "modified",
             "path": path,
             "before_hash": previous["files"][path]["hash"],
             "after_hash": current["files"][path]["hash"],
-            "db_check": "document/entity provenance may be stale",
-            "reason": "content changed; semantic reconciliation required",
-        })
+            "reason": "content changed; DB reconciliation requires semantic inspection",
+        }
+        if len(before_matches) == 1:
+            item["document_id"] = before_matches[0]["document_id"]
+            item["previous_db_entities"] = before_matches[0]["entities"]
+            if len(after_matches) == 1 and after_matches[0]["document_id"] == before_matches[0]["document_id"]:
+                item["db_check"] = "same DB document identity, but content is stale"
+                item["identity_status"] = "stable"
+            elif len(after_matches) > 1:
+                item["db_check"] = "modified content matches multiple DB documents"
+                item["identity_status"] = "ambiguous"
+            elif len(after_matches) == 1:
+                item["db_check"] = "modified content matches a different DB document"
+                item["identity_status"] = "conflict"
+            else:
+                item["db_check"] = "same DB document identified by previous hash; new content not in DB"
+                item["identity_status"] = "stale"
+        else:
+            item["db_check"] = (
+                "previous content has no unique DB identity"
+                if not before_matches
+                else "previous content matches multiple DB documents"
+            )
+            item["identity_status"] = "unknown" if not before_matches else "ambiguous"
+        review.append(item)
 
     if not db_available:
         skipped.append({
             "kind": "db",
-            "reason": "DB unavailable; vault-only classification retained",
+            "reason": "DB unavailable; all changed items remain REVIEW",
         })
 
     plan = {
