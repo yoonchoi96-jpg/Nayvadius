@@ -141,6 +141,14 @@ def apply_vault_organization_plan(
             "skipped": skipped, "changed": 0,
         }
 
+    if not valid:
+        return {
+            "status": "REVIEW" if skipped else "CLEAN",
+            "applied": [],
+            "skipped": skipped,
+            "changed": 0,
+        }
+
     operation = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     backup_root = root / backup_dir / "vault-organization" / operation
     manifest = []
