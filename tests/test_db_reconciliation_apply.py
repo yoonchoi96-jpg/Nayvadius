@@ -1,5 +1,5 @@
 from pathlib import Path
-from nayvadius.db_reconciliation_apply import apply_db_reconciliation_plan
+from nayvadius.db_reconciliation_apply import apply_db_reconciliation_plan, verify_db_reconciliation_apply
 from nayvadius.reconciliation import _fingerprint
 
 def plan(root):
@@ -45,3 +45,20 @@ def test_wikilink_rewrite_on_apply(tmp_path: Path):
     r = apply_db_reconciliation_plan(tmp_path, plan(tmp_path), apply=True)
     assert r["status"] == "APPLIED"
     assert (tmp_path / "note.md").read_text() == "See [[20_Entities/People/New]]."
+
+
+def test_post_apply_verification(tmp_path: Path):
+    (tmp_path / "old.md").write_text("same")
+    r = apply_db_reconciliation_plan(tmp_path, plan(tmp_path), apply=True)
+    v = verify_db_reconciliation_apply(tmp_path, r)
+    assert v["status"] == "VERIFIED"
+    assert v["checked"] == 1
+
+
+def test_post_apply_verification_detects_tamper(tmp_path: Path):
+    (tmp_path / "old.md").write_text("same")
+    r = apply_db_reconciliation_plan(tmp_path, plan(tmp_path), apply=True)
+    (tmp_path / "20_Entities/People/New.md").write_text("tampered")
+    v = verify_db_reconciliation_apply(tmp_path, r)
+    assert v["status"] == "FAIL"
+    assert "target hash mismatch" in v["errors"][0]
