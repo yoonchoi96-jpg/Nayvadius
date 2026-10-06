@@ -76,19 +76,11 @@ class ObsidianREST:
         self.request("DELETE", path)
 
     def copy_remote(self, source: str, destination: str) -> None:
-        encoded = "/".join(urllib.parse.quote(part, safe="") for part in source.split("/"))
-        url = f"{self.base}/vault/{encoded}"
-        req = urllib.request.Request(
-            url,
-            headers={**self.headers, "Destination": destination},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, context=self.ctx, timeout=60):
-                pass
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"Obsidian REST copy {source}: HTTP {exc.code}: {detail[:500]}") from exc
+        # Local REST API does not expose a server-side file-copy operation.
+        # Backups therefore use an authenticated GET followed by a text/markdown PUT.
+        # This keeps the backup portable across plugin versions.
+        content = self.read(source)
+        self.write(destination, content)
 
 
 def api_key_from(vault: Path) -> str:
