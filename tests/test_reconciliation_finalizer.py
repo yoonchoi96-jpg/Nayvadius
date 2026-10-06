@@ -157,3 +157,98 @@ def test_finalizer_is_idempotent(tmp_path: Path):
     count = conn.execute("SELECT COUNT(*) FROM reconciliation_provenance").fetchone()[0]
     conn.close()
     assert count == 1
+
+
+def test_finalizer_reverifies_live_files_before_recording(tmp_path: Path):
+    db = tmp_path / "state.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE documents (id TEXT PRIMARY KEY, content_hash TEXT)")
+        conn.execute("INSERT INTO documents VALUES (?, ?)", ("doc-1", "e" * 64))
+
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"operations": [{
+        "operation": "move",
+        "original_path": "old.md",
+        "new_path": "new.md",
+        "original_hash": "e" * 64,
+    }]}))
+    (tmp_path / "new.md").write_text("wrong", encoding="utf-8")
+    apply_result = {
+        "status": "APPLIED",
+        "backup_manifest": "manifest.json",
+        "applied": [{"document_id": "doc-1", "source": "old.md", "target": "new.md", "hash": "e" * 64}],
+    }
+
+    result = finalize_db_reconciliation_provenance(
+        db, tmp_path, apply_result, {"status": "VERIFIED"}, apply=True
+    )
+
+    assert result["status"] == "REVIEW"
+    assert result["recorded"] == 0
+    with sqlite3.connect(db) as conn:
+        assert conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='reconciliation_provenance'"
+        ).fetchone() is None
+
+
+def test_finalizer_is_transactional_across_multiple_entries(tmp_path: Path):
+    db = tmp_path / "state.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE documents (id TEXT PRIMARY KEY, content_hash TEXT)")
+        conn.executemany(
+            "INSERT INTO documents VALUES (?, ?)",
+            [("doc-1", "f" * 64), ("doc-2", "0" * 64)],
+        )
+
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"operations": [
+        {"operation": "move", "original_path": "old1.md", "new_path": "new1.md", "original_hash": "f" * 64},
+        {"operation": "move", "original_path": "old2.md", "new_path": "new2.md", "original_hash": "f" * 64},
+    ]}))
+    (tmp_path / "new1.md").write_text("f", encoding="utf-8")
+    (tmp_path / "new2.md").write_text("f", encoding="utf-8")
+    apply_result = {
+        "status": "APPLIED",
+        "backup_manifest": "manifest.json",
+        "applied": [
+            {"document_id": "doc-1", "source": "old1.md", "target": "new1.md", "hash": "f" * 64},
+            {"document_id": "doc-2", "source": "old2.md", "target": "new2.md", "hash": "f" * 64},
+        ],
+    }
+
+    result = finalize_db_reconciliation_provenance(
+        db, tmp_path, apply_result, {"status": "VERIFIED"}, apply=True
+    )
+
+    assert result["status"] == "REVIEW"
+    assert result["recorded"] == 0
+    with sqlite3.connect(db) as conn:
+        assert conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='reconciliation_provenance'"
+        ).fetchone() is None
+
+
+def test_finalizer_reports_new_and_existing_provenance_separately(tmp_path: Path):
+    db = tmp_path / "state.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE documents (id TEXT PRIMARY KEY, content_hash TEXT)")
+        conn.execute("INSERT INTO documents VALUES (?, ?)", ("doc-1", "1" * 64))
+
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"operations": [{
+        "operation": "move", "original_path": "old.md", "new_path": "new.md", "original_hash": "1" * 64
+    }]}))
+    (tmp_path / "new.md").write_text("1", encoding="utf-8")
+    apply_result = {
+        "status": "APPLIED",
+        "backup_manifest": "manifest.json",
+        "applied": [{"document_id": "doc-1", "source": "old.md", "target": "new.md", "hash": "1" * 64}],
+    }
+
+    first = finalize_db_reconciliation_provenance(db, tmp_path, apply_result, {"status": "VERIFIED"}, apply=True)
+    second = finalize_db_reconciliation_provenance(db, tmp_path, apply_result, {"status": "VERIFIED"}, apply=True)
+
+    assert first["recorded"] == 1
+    assert first["already_recorded"] == 0
+    assert second["recorded"] == 0
+    assert second["already_recorded"] == 1
