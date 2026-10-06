@@ -14,7 +14,7 @@ from .reconciliation import (
     build_live_db_reconciliation_plan, write_db_reconciliation_plan, write_vault_snapshot,
 )
 from .reconciliation_guard import validate_db_reconciliation_plan
-from .db_reconciliation_apply import apply_db_reconciliation_plan
+from .db_reconciliation_apply import apply_db_reconciliation_plan, verify_db_reconciliation_apply
 from .reconciliation_finalizer import finalize_db_reconciliation_provenance
 from .vault_organization import (
     build_vault_organization_plan, write_vault_organization_plan,
@@ -28,7 +28,8 @@ def main() -> None:
         "status", "process", "retry-failed", "qa", "obsidian-audit",
         "obsidian-normalize", "entity-merge-plan", "entity-merge-apply",
         "vault-organization-plan", "vault-organization-apply", "db-reconcile-plan",
-        "db-reconcile-verify", "db-reconcile-apply", "maintenance",
+        "db-reconcile-verify", "db-reconcile-apply", "db-reconcile-result-verify",
+        "db-reconcile-finalize", "maintenance",
     ])
     parser.add_argument("--input", default="data/input.jsonl")
     parser.add_argument("--db", default="data/nayvadius.db")
