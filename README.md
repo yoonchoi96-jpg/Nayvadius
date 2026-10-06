@@ -215,9 +215,11 @@ DB entity resolution records whether a reference was resolved directly, through 
 ```bash
 python -m nayvadius.cli db-reconcile-plan --output /path/to/vault --db data/nayvadius.db
 python -m nayvadius.cli db-reconcile-verify --output /path/to/vault
+python -m nayvadius.cli db-reconcile-apply --output /path/to/vault
+python -m nayvadius.cli db-reconcile-apply --output /path/to/vault --apply
 ```
 
-On first run, this creates `vault_snapshot.json` as a baseline. Subsequent runs compare the live vault against that snapshot and write `db_reconciliation_plan.json`. Both commands are analysis-only: they never mutate the vault or database. The verification command rejects stale/tampered plans, malformed `AUTO` entries, unresolved graph evidence, and root mismatches. A future apply engine must verify the plan immediately before mutation rather than trusting a previously generated JSON file.
+On first run, this creates `vault_snapshot.json` as a baseline. Subsequent runs compare the live vault against that snapshot and write `db_reconciliation_plan.json`. Both commands are analysis-only: they never mutate the vault or database. The verification command rejects stale/tampered plans, malformed `AUTO` entries, unresolved graph evidence, and root mismatches. The reconciliation apply command is dry-run by default; only `--apply` mutates the vault. It re-checks the plan and source SHA-256 immediately before moving files, refuses target collisions, creates a backup manifest, and rolls back on failure. It never mutates the SQLite database. DB provenance changes remain a separate, post-verified operation.
 
 ## Live Obsidian bridge
 
