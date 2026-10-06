@@ -451,3 +451,17 @@ def test_vault_organization_apply_rejects_stale_plan(tmp_path: Path):
     assert result["status"] == "REVIEW"
     assert source.exists()
     assert not (root / "20_Entities" / "People" / "Alice.md").exists()
+
+
+def test_vault_organization_apply_rewrites_path_qualified_links(tmp_path: Path):
+    from nayvadius.vault_organization import build_vault_organization_plan, apply_vault_organization_plan
+    root = tmp_path / "vault"
+    source = root / "entities" / "Companies" / "Acme.md"
+    source.parent.mkdir(parents=True)
+    source.write_text("# Acme\n", encoding="utf-8")
+    note = root / "note.md"
+    note.write_text("[[entities/Companies/Acme#History|old]]\n[[Acme]]\n", encoding="utf-8")
+    plan = build_vault_organization_plan(root)
+    result = apply_vault_organization_plan(root, plan, apply=True)
+    assert result["status"] == "APPLIED"
+    assert note.read_text(encoding="utf-8") == "[[20_Entities/Organizations/Acme#History|old]]\n[[Acme]]\n"
