@@ -420,3 +420,34 @@ def test_vault_organization_plan_does_not_semantically_guess_free_notes(tmp_path
     assert plan["status"] == "CLEAN"
     assert plan["moves"] == []
     assert plan["review"] == []
+
+
+def test_vault_organization_apply_moves_and_rewrites_links(tmp_path: Path):
+    from nayvadius.vault_organization import build_vault_organization_plan, apply_vault_organization_plan
+    root = tmp_path / "vault"
+    source = root / "entities" / "Companies" / "Acme.md"
+    source.parent.mkdir(parents=True)
+    source.write_text("# Acme\n", encoding="utf-8")
+    note = root / "note.md"
+    note.write_text("[[Acme#History|company]]\n", encoding="utf-8")
+    plan = build_vault_organization_plan(root)
+    result = apply_vault_organization_plan(root, plan, apply=True)
+    target = root / "20_Entities" / "Organizations" / "Acme.md"
+    assert result["status"] == "APPLIED"
+    assert target.exists() and not source.exists()
+    assert note.read_text(encoding="utf-8") == "[[Acme#History|company]]\n"
+    assert (root / result["backup_manifest"]).exists()
+
+
+def test_vault_organization_apply_rejects_stale_plan(tmp_path: Path):
+    from nayvadius.vault_organization import build_vault_organization_plan, apply_vault_organization_plan
+    root = tmp_path / "vault"
+    source = root / "entities" / "People" / "Alice.md"
+    source.parent.mkdir(parents=True)
+    source.write_text("# Alice\n", encoding="utf-8")
+    plan = build_vault_organization_plan(root)
+    source.write_text("# Changed\n", encoding="utf-8")
+    result = apply_vault_organization_plan(root, plan, apply=True)
+    assert result["status"] == "REVIEW"
+    assert source.exists()
+    assert not (root / "20_Entities" / "People" / "Alice.md").exists()
