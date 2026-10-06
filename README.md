@@ -203,6 +203,16 @@ vault files are never permanently discarded. The maintenance command writes
 aliases, and relation endpoints with the SQLite database.
 
 
+## DB ↔ Vault reconciliation
+
+The deterministic reconciliation planner cross-checks Obsidian vault changes against Nayvadius document identity using the vault SHA-256 and `documents.content_hash`. Exact content-preserving moves become `AUTO` only when exactly one DB document matches; ambiguous, unmatched, added, deleted, and modified notes remain `REVIEW` with DB provenance details attached.
+
+```bash
+python -m nayvadius.cli db-reconcile-plan --output /path/to/vault --db data/nayvadius.db
+```
+
+On first run, this creates `vault_snapshot.json` as a baseline. Subsequent runs compare the live vault against that snapshot and write `db_reconciliation_plan.json`. The command is analysis-only: it never mutates the vault or database. The snapshot is updated only after the reconciliation plan is produced.
+
 ## Live Obsidian bridge
 
 The live bridge connects to the user's running Obsidian instance through the Local REST API
