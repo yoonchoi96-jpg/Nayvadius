@@ -495,3 +495,19 @@ def test_vault_snapshot_ignores_non_markdown_and_hidden_paths(tmp_path: Path):
     (root / '.obsidian' / 'config.md').write_text('hidden', encoding='utf-8')
     snapshot = snapshot_vault(root)
     assert list(snapshot['files']) == ['note.md']
+
+
+def test_vault_snapshot_detects_move_and_modification(tmp_path: Path):
+    from nayvadius.obsidian_audit import compare_vault_snapshots, snapshot_vault
+    root = tmp_path / 'vault'
+    root.mkdir()
+    (root / 'old.md').write_text('same', encoding='utf-8')
+    (root / 'note.md').write_text('old', encoding='utf-8')
+    previous = snapshot_vault(root)
+    (root / 'old.md').rename(root / 'new.md')
+    (root / 'note.md').write_text('new', encoding='utf-8')
+    diff = compare_vault_snapshots(previous, snapshot_vault(root))
+    assert diff['moved'][0]['from'] == 'old.md'
+    assert diff['moved'][0]['to'] == 'new.md'
+    assert diff['modified'] == ['note.md']
+    assert diff['summary']['changed'] == 2
