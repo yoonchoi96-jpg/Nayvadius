@@ -10,6 +10,10 @@ from .obsidian_audit import (
     build_entity_merge_plan, write_audit_report, write_merge_plan,
     write_maintenance_report, apply_entity_merge_plan,
 )
+from .vault_organization import (
+    build_vault_organization_plan, write_vault_organization_plan,
+    apply_vault_organization_plan,
+)
 
 
 def main() -> None:
@@ -17,7 +21,7 @@ def main() -> None:
     parser.add_argument("command", choices=[
         "status", "process", "retry-failed", "qa", "obsidian-audit",
         "obsidian-normalize", "entity-merge-plan", "entity-merge-apply",
-        "maintenance",
+        "vault-organization-plan", "vault-organization-apply", "maintenance",
     ])
     parser.add_argument("--input", default="data/input.jsonl")
     parser.add_argument("--db", default="data/nayvadius.db")
@@ -29,7 +33,26 @@ def main() -> None:
     parser.add_argument("--max-attempts", type=int, default=5)
     args = parser.parse_args()
 
-    if args.command == "vault-organization-apply":\n        plan_path = str(args.output).rstrip("/") + "/vault_organization_plan.json"\n        with open(plan_path, encoding="utf-8") as fh:\n            plan = json.load(fh)\n        result = apply_vault_organization_plan(args.output, plan, apply=args.apply)\n        print(json.dumps(result, ensure_ascii=False, indent=2))\n        if result.get("status") == "FAIL":\n            raise SystemExit(1)\n        return\n\n    if args.command == "vault-organization-plan":\n        plan = build_vault_organization_plan(args.output)\n        path = str(args.output).rstrip("/") + "/vault_organization_plan.json"\n        write_vault_organization_plan(plan, path)\n        print(json.dumps(plan, ensure_ascii=False, indent=2))\n        if plan["status"] == "FAIL":\n            raise SystemExit(1)\n        return\n\n    if args.command == "entity-merge-apply":
+    if args.command == "vault-organization-apply":
+        plan_path = str(args.output).rstrip("/") + "/vault_organization_plan.json"
+        with open(plan_path, encoding="utf-8") as fh:
+            plan = json.load(fh)
+        result = apply_vault_organization_plan(args.output, plan, apply=args.apply)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if result.get("status") == "FAIL":
+            raise SystemExit(1)
+        return
+
+    if args.command == "vault-organization-plan":
+        plan = build_vault_organization_plan(args.output)
+        path = str(args.output).rstrip("/") + "/vault_organization_plan.json"
+        write_vault_organization_plan(plan, path)
+        print(json.dumps(plan, ensure_ascii=False, indent=2))
+        if plan["status"] == "FAIL":
+            raise SystemExit(1)
+        return
+
+    if args.command == "entity-merge-apply":
         plan_path = str(args.output).rstrip("/") + "/entity_merge_plan.json"
         with open(plan_path, encoding="utf-8") as fh:
             plan = json.load(fh)
