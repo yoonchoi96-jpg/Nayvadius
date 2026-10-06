@@ -39,6 +39,19 @@ def finalize_db_reconciliation_provenance(
     if verification.get("status") != "VERIFIED":
         return {"status": "REVIEW", "recorded": 0, "reason": "apply result is not VERIFIED"}
 
+    # Never trust a caller-provided VERIFIED flag by itself. Re-run the
+    # read-only manifest/filesystem verification at the provenance boundary.
+    from .db_reconciliation_apply import verify_db_reconciliation_apply
+
+    live_verification = verify_db_reconciliation_apply(vault_root, apply_result)
+    if live_verification.get("status") != "VERIFIED":
+        return {
+            "status": "REVIEW",
+            "recorded": 0,
+            "reason": "live reconciliation verification failed",
+            "verification": live_verification,
+        }
+
     entries = apply_result.get("applied", [])
     if not isinstance(entries, list):
         return {"status": "FAIL", "recorded": 0, "reason": "invalid applied entries"}
