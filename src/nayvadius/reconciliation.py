@@ -5,7 +5,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from .obsidian_audit import compare_vault_snapshots
+from .obsidian_audit import compare_vault_snapshots, snapshot_vault
 
 
 PLAN_VERSION = 2
@@ -69,15 +69,8 @@ def _match_details(matches: list[dict]) -> dict:
     return {}
 
 
-def build_db_reconciliation_plan(
-    previous: dict,
-    current: dict,
-    db_path: str | Path,
-) -> dict:
-    """Cross-check vault changes against deterministic DB document identity.
-
-    No filesystem or database mutation occurs.
-    """
+def build_db_reconciliation_plan(previous: dict, current: dict, db_path: str | Path) -> dict:
+    """Cross-check vault changes against deterministic DB document identity."""
     diff = compare_vault_snapshots(previous, current)
     db_available = bool(db_path) and Path(db_path).exists()
     db_index = (
@@ -89,32 +82,22 @@ def build_db_reconciliation_plan(
 
     for item in diff["moved"]:
         matches = _hash_matches(db_index, item["hash"])
-        base = {
-            "kind": "move",
-            "source": item["from"],
-            "target": item["to"],
-            "hash": item["hash"],
-        }
+        base = {"kind": "move", "source": item["from"], "target": item["to"], "hash": item["hash"]}
         if len(matches) == 1:
             auto.append({
-                "action": "AUTO",
-                **base,
-                **_match_details(matches),
+                "action": "AUTO", **base, **_match_details(matches),
                 "db_check": "unique DB content_hash match",
                 "reason": "exact content-preserving move with unique DB identity",
             })
         elif len(matches) > 1:
             review.append({
-                "action": "REVIEW",
-                **base,
-                **_match_details(matches),
+                "action": "REVIEW", **base, **_match_details(matches),
                 "db_check": "ambiguous DB content_hash match",
                 "reason": "multiple DB documents share the same content hash",
             })
         else:
             review.append({
-                "action": "REVIEW",
-                **base,
+                "action": "REVIEW", **base,
                 "db_check": "no DB content_hash match",
                 "reason": "vault move has no deterministic DB identity match",
             })
@@ -122,9 +105,7 @@ def build_db_reconciliation_plan(
     for path in diff["added"]:
         matches = _hash_matches(db_index, current["files"][path]["hash"])
         item = {
-            "action": "REVIEW",
-            "kind": "added",
-            "path": path,
+            "action": "REVIEW", "kind": "added", "path": path,
             "hash": current["files"][path]["hash"],
             "reason": "new vault note requires reconciliation before DB linkage",
         }
@@ -141,9 +122,7 @@ def build_db_reconciliation_plan(
     for path in diff["deleted"]:
         matches = _hash_matches(db_index, previous["files"][path]["hash"])
         item = {
-            "action": "REVIEW",
-            "kind": "deleted",
-            "path": path,
+            "action": "REVIEW", "kind": "deleted", "path": path,
             "hash": previous["files"][path]["hash"],
             "reason": "deleted note may leave orphaned DB provenance",
         }
@@ -161,9 +140,7 @@ def build_db_reconciliation_plan(
         before_matches = _hash_matches(db_index, previous["files"][path]["hash"])
         after_matches = _hash_matches(db_index, current["files"][path]["hash"])
         item = {
-            "action": "REVIEW",
-            "kind": "modified",
-            "path": path,
+            "action": "REVIEW", "kind": "modified", "path": path,
             "before_hash": previous["files"][path]["hash"],
             "after_hash": current["files"][path]["hash"],
             "reason": "content changed; DB reconciliation requires semantic inspection",
@@ -186,17 +163,13 @@ def build_db_reconciliation_plan(
         else:
             item["db_check"] = (
                 "previous content has no unique DB identity"
-                if not before_matches
-                else "previous content matches multiple DB documents"
+                if not before_matches else "previous content matches multiple DB documents"
             )
             item["identity_status"] = "unknown" if not before_matches else "ambiguous"
         review.append(item)
 
     if not db_available:
-        skipped.append({
-            "kind": "db",
-            "reason": "DB unavailable; all changed items remain REVIEW",
-        })
+        skipped.append({"kind": "db", "reason": "DB unavailable; all changed items remain REVIEW"})
 
     plan = {
         "title": "Nayvadius DB ↔ Vault Reconciliation Plan",
@@ -214,9 +187,7 @@ def build_db_reconciliation_plan(
             "entity_links": db_index["entity_links"],
         },
         "summary": {
-            "auto": len(auto),
-            "review": len(review),
-            "skipped": len(skipped),
+            "auto": len(auto), "review": len(review), "skipped": len(skipped),
             "changed": diff["summary"]["changed"],
         },
     }
@@ -224,10 +195,19 @@ def build_db_reconciliation_plan(
     return plan
 
 
+def build_live_db_reconciliation_plan(previous: dict, root: str | Path, db_path: str | Path) -> tuple[dict, dict]:
+    """Snapshot a live vault and reconcile it against a persisted previous snapshot."""
+    current = snapshot_vault(root)
+    return current, build_db_reconciliation_plan(previous, current, db_path)
+
+
+def write_vault_snapshot(snapshot: dict, path: str | Path) -> None:
+    out = Path(path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
 def write_db_reconciliation_plan(plan: dict, path: str | Path) -> None:
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(
-        json.dumps(plan, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    out.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
