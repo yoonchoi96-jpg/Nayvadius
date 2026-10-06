@@ -465,3 +465,33 @@ def test_vault_organization_apply_rewrites_path_qualified_links(tmp_path: Path):
     result = apply_vault_organization_plan(root, plan, apply=True)
     assert result["status"] == "APPLIED"
     assert note.read_text(encoding="utf-8") == "[[20_Entities/Organizations/Acme#History|old]]\n[[Acme]]\n"
+
+def test_vault_snapshot_and_change_detection_classify_moves_and_modifications(tmp_path: Path):
+    from nayvadius.obsidian_audit import compare_vault_snapshots, snapshot_vault
+    root = tmp_path / 'vault'
+    (root / 'entities' / 'People').mkdir(parents=True)
+    (root / 'entities' / 'People' / 'Alice.md').write_text('# Alice\n', encoding='utf-8')
+    (root / 'note.md').write_text('old\n', encoding='utf-8')
+    previous = snapshot_vault(root)
+    (root / 'entities' / 'People' / 'Alice.md').rename(root / 'entities' / 'People' / 'Alicia.md')
+    (root / 'note.md').write_text('new\n', encoding='utf-8')
+    (root / 'new.md').write_text('brand new\n', encoding='utf-8')
+    current = snapshot_vault(root)
+    diff = compare_vault_snapshots(previous, current)
+    assert diff['moved'][0]['from'] == 'entities/People/Alice.md'
+    assert diff['moved'][0]['to'] == 'entities/People/Alicia.md'
+    assert diff['modified'] == ['note.md']
+    assert diff['added'] == ['new.md']
+    assert diff['deleted'] == []
+    assert diff['summary']['changed'] == 3
+
+def test_vault_snapshot_ignores_non_markdown_and_hidden_paths(tmp_path: Path):
+    from nayvadius.obsidian_audit import snapshot_vault
+    root = tmp_path / 'vault'
+    root.mkdir()
+    (root / 'note.md').write_text('x', encoding='utf-8')
+    (root / 'image.png').write_bytes(b'binary')
+    (root / '.obsidian').mkdir()
+    (root / '.obsidian' / 'config.md').write_text('hidden', encoding='utf-8')
+    snapshot = snapshot_vault(root)
+    assert list(snapshot['files']) == ['note.md']
