@@ -115,6 +115,14 @@ def apply_vault_organization_plan(
 ) -> dict:
     """Apply only AUTO moves from a hash-validated plan, with backups and rollback."""
     root = Path(root)
+    planned_root = plan.get("root")
+    if planned_root and Path(planned_root).resolve() != root.resolve():
+        return {
+            "status": "REVIEW",
+            "applied": [],
+            "skipped": [{"reason": "plan belongs to a different vault root"}],
+            "changed": 0,
+        }
     moves = [item for item in plan.get("moves", []) if isinstance(item, dict)]
     skipped = list(plan.get("review", [])) + list(plan.get("skipped", []))
     valid = []
