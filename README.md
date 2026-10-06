@@ -192,7 +192,10 @@ python -m nayvadius.cli obsidian-normalize --output /path/to/vault --apply
 python -m nayvadius.cli entity-merge-plan --output /path/to/vault
 python -m nayvadius.cli entity-merge-apply --output /path/to/vault --db data/nayvadius.db
 python -m nayvadius.cli entity-merge-apply --output /path/to/vault --db data/nayvadius.db --apply
-python -m nayvadius.cli maintenance --output /path/to/vault --db data/nayvadius.db\npython -m nayvadius.cli vault-organization-plan --output /path/to/vault\npython -m nayvadius.cli vault-organization-apply --output /path/to/vault\npython -m nayvadius.cli vault-organization-apply --output /path/to/vault --apply
+python -m nayvadius.cli maintenance --output /path/to/vault --db data/nayvadius.db
+python -m nayvadius.cli vault-organization-plan --output /path/to/vault
+python -m nayvadius.cli vault-organization-apply --output /path/to/vault
+python -m nayvadius.cli vault-organization-apply --output /path/to/vault --apply
 ```
 
 Merge plans separate `AUTO`, `REVIEW`, and `SKIP` candidates. Vault organization plans separately identify deterministic `AUTO` relocations, conflicts requiring `REVIEW`, and safe `SKIP` cases. Only explicit `--apply` changes files. Only `AUTO` candidates
