@@ -25,9 +25,14 @@ def _db_identity_index(db_path: str | Path) -> dict:
         entities = db.execute(
             "SELECT entity_name, entity_type, document_id FROM document_entities"
         ).fetchall()
-        aliases = db.execute(
-            "SELECT alias, canonical_name, entity_type FROM entity_aliases"
-        ).fetchall()
+        try:
+            aliases = db.execute(
+                "SELECT alias, canonical_name, entity_type FROM entity_aliases"
+            ).fetchall()
+        except sqlite3.OperationalError as exc:
+            if "no such table" not in str(exc).lower():
+                raise
+            aliases = []
         try:
             entity_rows = db.execute(
                 "SELECT name, entity_type, aliases FROM entities"
@@ -384,6 +389,8 @@ def build_db_reconciliation_plan(previous: dict, current: dict, db_path: str | P
         "db_summary": {
             "documents": db_index["document_count"],
             "entity_links": db_index["entity_links"],
+            "explicit_aliases": sum(len(v) for v in db_index.get("aliases", {}).values()),
+            "entity_metadata_aliases": sum(len(v) for v in db_index.get("entity_aliases", {}).values()),
         },
         "summary": {
             "auto": len(auto), "review": len(review), "skipped": len(skipped),
