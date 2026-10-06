@@ -5,7 +5,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from .obsidian_audit import compare_vault_snapshots, snapshot_vault
+from .obsidian_audit import _entity_files, _wikilink_matches, compare_vault_snapshots, normalize_entity_name, parse_wikilink, snapshot_vault
 
 
 PLAN_VERSION = 2
@@ -51,6 +51,51 @@ def _db_identity_index(db_path: str | Path) -> dict:
     }
 
 
+
+def _vault_entity_index(root):
+    entities, _, _ = _entity_files(Path(root))
+    index = {}
+    for entity in entities:
+        for value in [entity["name"], *entity["aliases"].values()]:
+            index.setdefault((entity["domain"], normalize_entity_name(value)), []).append(entity)
+    return index
+
+
+def _resolve_db_entities(db_entities, vault_entities):
+    resolved, unresolved = [], []
+    for name, entity_type in db_entities:
+        candidates = {x["relative"]: x for x in vault_entities.get((entity_type, normalize_entity_name(name)), [])}
+        if len(candidates) == 1:
+            entity = next(iter(candidates.values()))
+            resolved.append({"name": name, "entity_type": entity_type, "canonical_name": entity["name"], "file": entity["relative"]})
+        elif not candidates:
+            unresolved.append({"name": name, "entity_type": entity_type, "reason": "no canonical Obsidian entity file or alias match"})
+        else:
+            unresolved.append({"name": name, "entity_type": entity_type, "reason": "multiple canonical Obsidian entity files match", "files": sorted(candidates)})
+    return {"resolved": resolved, "unresolved": unresolved}
+
+
+def _wikilink_resolution(root, relative_path, vault_entities):
+    path = Path(root) / relative_path
+    if not path.exists() or path.suffix.lower() != ".md":
+        return {"status": "unavailable", "links": [], "unresolved": []}
+    links, unresolved = [], []
+    for match in _wikilink_matches(path.read_text(encoding="utf-8")):
+        target = parse_wikilink(match.group(2))["target"]
+        if not target or target.startswith(("http://", "https://")):
+            continue
+        candidates = {}
+        for (domain, key), items in vault_entities.items():
+            if key == normalize_entity_name(target):
+                for item in items:
+                    candidates[item["relative"]] = item
+        if len(candidates) == 1:
+            item = next(iter(candidates.values()))
+            links.append({"target": target, "canonical_file": item["relative"], "entity_type": item["domain"]})
+        else:
+            unresolved.append(target)
+    return {"status": "checked", "links": links, "unresolved": sorted(set(unresolved))}
+
 def _hash_matches(db_index: dict, content_hash: str) -> list[dict]:
     return db_index["by_hash"].get(content_hash, [])
 
@@ -69,7 +114,7 @@ def _match_details(matches: list[dict]) -> dict:
     return {}
 
 
-def build_db_reconciliation_plan(previous: dict, current: dict, db_path: str | Path) -> dict:
+def build_db_reconciliation_plan(previous: dict, current: dict, db_path: str | Path, vault_root: str | Path | None = None) -> dict:
     """Cross-check vault changes against deterministic DB document identity."""
     diff = compare_vault_snapshots(previous, current)
     db_available = bool(db_path) and Path(db_path).exists()
@@ -79,16 +124,27 @@ def build_db_reconciliation_plan(previous: dict, current: dict, db_path: str | P
         else {"by_hash": {}, "document_count": 0, "entity_links": 0}
     )
     auto, review, skipped = [], [], []
+    vault_entities = _vault_entity_index(vault_root) if vault_root else {}
 
     for item in diff["moved"]:
         matches = _hash_matches(db_index, item["hash"])
         base = {"kind": "move", "source": item["from"], "target": item["to"], "hash": item["hash"]}
         if len(matches) == 1:
-            auto.append({
-                "action": "AUTO", **base, **_match_details(matches),
-                "db_check": "unique DB content_hash match",
-                "reason": "exact content-preserving move with unique DB identity",
-            })
+            entity_check = _resolve_db_entities(matches[0]["entities"], vault_entities) if vault_root else {"resolved": [], "unresolved": []}
+            link_check = _wikilink_resolution(vault_root, item["to"], vault_entities) if vault_root else {"status": "unavailable", "links": [], "unresolved": []}
+            details = {"entity_resolution": entity_check, "wikilink_resolution": link_check}
+            if vault_root and (entity_check["unresolved"] or link_check["unresolved"]):
+                review.append({
+                    "action": "REVIEW", **base, **_match_details(matches), **details,
+                    "db_check": "DB identity matched but canonical entity/link resolution is incomplete",
+                    "reason": "document identity is deterministic but Obsidian graph integrity is not proven",
+                })
+            else:
+                auto.append({
+                    "action": "AUTO", **base, **_match_details(matches), **details,
+                    "db_check": "unique DB content_hash and canonical entity match",
+                    "reason": "exact move with unique DB identity and resolved Obsidian graph",
+                })
         elif len(matches) > 1:
             review.append({
                 "action": "REVIEW", **base, **_match_details(matches),
@@ -198,7 +254,7 @@ def build_db_reconciliation_plan(previous: dict, current: dict, db_path: str | P
 def build_live_db_reconciliation_plan(previous: dict, root: str | Path, db_path: str | Path) -> tuple[dict, dict]:
     """Snapshot a live vault and reconcile it against a persisted previous snapshot."""
     current = snapshot_vault(root)
-    return current, build_db_reconciliation_plan(previous, current, db_path)
+    return current, build_db_reconciliation_plan(previous, current, db_path, vault_root=root)
 
 
 def write_vault_snapshot(snapshot: dict, path: str | Path) -> None:
