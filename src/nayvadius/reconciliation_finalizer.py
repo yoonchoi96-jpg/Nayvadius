@@ -98,9 +98,12 @@ def finalize_db_reconciliation_provenance(
                 PRIMARY KEY(document_id, content_hash, old_path, new_path)
             )"""
         )
-        for entry in entries:
-            document_id = entry.get("document_id")
-            if not document_id:
+        for entry in validated:
+            document_id, old_path, new_path, content_hash = entry
+            row = conn.execute("SELECT content_hash FROM documents WHERE id = ?", (document_id,)).fetchone()
+            if row is None or str(row[0] or "") != content_hash:
+                conn.rollback()
+                return {"status": "REVIEW", "recorded": 0, "reason": "DB document identity mismatch", "document_id": document_id}
                 conn.rollback()
                 return {
                     "status": "REVIEW",
@@ -108,18 +111,12 @@ def finalize_db_reconciliation_provenance(
                     "reason": "AUTO entry lacks document_id",
                     "entry": entry,
                 }
-            old_path = str(entry.get("source", ""))
-            new_path = str(entry.get("target", ""))
-            content_hash = str(entry.get("hash", ""))
-            if len(content_hash) != 64:
-                conn.rollback()
-                return {"status": "FAIL", "recorded": 0, "reason": "invalid content hash"}
             conn.execute(
                 """INSERT OR IGNORE INTO reconciliation_provenance
                    (document_id, content_hash, old_path, new_path, manifest_path, verified_at)
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 (
-                    str(document_id),
+                    document_id,
                     content_hash,
                     old_path,
                     new_path,
