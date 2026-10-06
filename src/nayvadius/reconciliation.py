@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import sqlite3
 from pathlib import Path
 
@@ -17,15 +17,41 @@ def _fingerprint(plan: dict) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def _db_entity_paths(db_path: str | Path) -> dict[tuple[str, str], set[str]]:
+def _db_identity_index(db_path: str | Path) -> dict:
     with sqlite3.connect(db_path) as db:
-        rows = db.execute(
+        documents = db.execute(
+            "SELECT id, title, content_hash, source FROM documents"
+        ).fetchall()
+        entities = db.execute(
             "SELECT entity_name, entity_type, document_id FROM document_entities"
         ).fetchall()
-    result = {}
-    for name, entity_type, document_id in rows:
-        result.setdefault((name, entity_type), set()).add(document_id)
-    return result
+
+    by_hash = {}
+    for document_id, title, content_hash, source in documents:
+        record = {
+            "document_id": document_id,
+            "title": title,
+            "source": source,
+            "entities": [],
+        }
+        by_hash.setdefault(content_hash, []).append(record)
+
+    by_id = {
+        record["document_id"]: record
+        for records in by_hash.values()
+        for record in records
+    }
+    for name, entity_type, document_id in entities:
+        if document_id in by_id:
+            by_id[document_id]["entities"].append((name, entity_type))
+    for record in by_id.values():
+        record["entities"].sort()
+
+    return {
+        "by_hash": by_hash,
+        "document_count": len(documents),
+        "entity_links": len(entities),
+    }
 
 
 def build_db_reconciliation_plan(
@@ -33,26 +59,54 @@ def build_db_reconciliation_plan(
     current: dict,
     db_path: str | Path,
 ) -> dict:
-    """Cross-check deterministic vault changes against DB identity/provenance.
+    """Cross-check vault changes against deterministic DB document identity.
 
-    This is analysis-only. It never mutates the vault or database.
+    No filesystem or database mutation occurs.
     """
     diff = compare_vault_snapshots(previous, current)
-    db_entities = _db_entity_paths(db_path) if Path(db_path).exists() else {}
+    db_available = bool(db_path) and Path(db_path).exists()
+    db_index = (
+        _db_identity_index(db_path)
+        if db_available
+        else {"by_hash": {}, "document_count": 0, "entity_links": 0}
+    )
     auto, review, skipped = [], [], []
 
     for item in diff["moved"]:
-        source = item["from"]
-        target = item["to"]
-        auto.append({
-            "action": "AUTO",
+        matches = db_index["by_hash"].get(item["hash"], [])
+        base = {
             "kind": "move",
-            "source": source,
-            "target": target,
+            "source": item["from"],
+            "target": item["to"],
             "hash": item["hash"],
-            "db_check": "content identity preserved; DB identity does not require mutation",
-            "reason": "exact content-preserving move",
-        })
+        }
+        if len(matches) == 1:
+            match = matches[0]
+            auto.append({
+                "action": "AUTO",
+                **base,
+                "document_id": match["document_id"],
+                "title": match["title"],
+                "source": match["source"],
+                "entities": match["entities"],
+                "db_check": "unique DB content_hash match",
+                "reason": "exact content-preserving move with unique DB identity",
+            })
+        elif len(matches) > 1:
+            review.append({
+                "action": "REVIEW",
+                **base,
+                "document_ids": sorted(x["document_id"] for x in matches),
+                "db_check": "ambiguous DB content_hash match",
+                "reason": "multiple DB documents share the same content hash",
+            })
+        else:
+            review.append({
+                "action": "REVIEW",
+                **base,
+                "db_check": "no DB content_hash match",
+                "reason": "vault move has no deterministic DB identity match",
+            })
 
     for path in diff["added"]:
         review.append({
@@ -60,8 +114,8 @@ def build_db_reconciliation_plan(
             "kind": "added",
             "path": path,
             "hash": current["files"][path]["hash"],
-            "db_check": "no prior path identity",
-            "reason": "new vault note requires entity/document reconciliation",
+            "db_check": "new vault note has no prior path identity",
+            "reason": "new note requires entity/document reconciliation",
         })
 
     for path in diff["deleted"]:
@@ -82,18 +136,14 @@ def build_db_reconciliation_plan(
             "before_hash": previous["files"][path]["hash"],
             "after_hash": current["files"][path]["hash"],
             "db_check": "document/entity provenance may be stale",
-            "reason": "content changed; DB reconciliation requires semantic inspection",
+            "reason": "content changed; semantic reconciliation required",
         })
 
-    # Keep this explicit even though it is currently only diagnostic: callers can
-    # use it to detect whether the DB has entity records at all.
-    db_entity_count = len(db_entities)
-    if not db_path or not Path(db_path).exists():
+    if not db_available:
         skipped.append({
             "kind": "db",
             "reason": "DB unavailable; vault-only classification retained",
         })
-        db_entity_count = 0
 
     plan = {
         "title": "Nayvadius DB ↔ Vault Reconciliation Plan",
@@ -106,7 +156,10 @@ def build_db_reconciliation_plan(
         "review": review,
         "skipped": skipped,
         "diff": diff,
-        "db_summary": {"entity_identities": db_entity_count},
+        "db_summary": {
+            "documents": db_index["document_count"],
+            "entity_links": db_index["entity_links"],
+        },
         "summary": {
             "auto": len(auto),
             "review": len(review),
@@ -121,4 +174,7 @@ def build_db_reconciliation_plan(
 def write_db_reconciliation_plan(plan: dict, path: str | Path) -> None:
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    out.write_text(
+        json.dumps(plan, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
