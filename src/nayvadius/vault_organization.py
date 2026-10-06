@@ -126,6 +126,7 @@ def apply_vault_organization_plan(
     moves = [item for item in plan.get("moves", []) if isinstance(item, dict)]
     skipped = list(plan.get("review", [])) + list(plan.get("skipped", []))
     valid = []
+    candidates = []
     planned_sources: set[Path] = set()
     planned_targets: set[Path] = set()
     for item in moves:
@@ -150,18 +151,35 @@ def apply_vault_organization_plan(
         ):
             skipped.append({"item": item, "reason": "target is not a canonical entity markdown path"})
             continue
-
         if not source.is_file() or not expected or _sha256(source.read_bytes()) != expected:
             skipped.append({"item": item, "reason": "source changed since planning"})
             continue
+        candidates.append((item, source, target))
+
+    source_counts: dict[Path, int] = {}
+    target_counts: dict[Path, int] = {}
+    for _, source, target in candidates:
+        source_counts[source] = source_counts.get(source, 0) + 1
+        target_counts[target] = target_counts.get(target, 0) + 1
+    candidate_sources = set(source_counts)
+    candidate_targets = set(target_counts)
+    colliding = {
+        source for source, count in source_counts.items() if count > 1
+    } | {
+        target for target, count in target_counts.items() if count > 1
+    } | (candidate_sources & candidate_targets)
+
+    for item, source, target in candidates:
+        if source in colliding or target in colliding:
+            reason = (
+                "move collision between planned source and target"
+                if source in candidate_targets or target in candidate_sources
+                else "duplicate source or target in plan"
+            )
+            skipped.append({"item": item, "reason": reason})
+            continue
         if target.exists():
             skipped.append({"item": item, "reason": "target now exists"})
-            continue
-        if source in planned_sources or target in planned_targets:
-            skipped.append({"item": item, "reason": "duplicate source or target in plan"})
-            continue
-        if target in planned_sources or source in planned_targets:
-            skipped.append({"item": item, "reason": "move collision between planned source and target"})
             continue
         planned_sources.add(source)
         planned_targets.add(target)
