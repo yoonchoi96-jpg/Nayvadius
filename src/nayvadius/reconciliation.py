@@ -28,6 +28,9 @@ def _db_identity_index(db_path: str | Path) -> dict:
         aliases = db.execute(
             "SELECT alias, canonical_name, entity_type FROM entity_aliases"
         ).fetchall()
+        entity_rows = db.execute(
+            "SELECT name, entity_type, aliases FROM entities"
+        ).fetchall()
 
     by_hash = {}
     by_id = {}
@@ -52,6 +55,20 @@ def _db_identity_index(db_path: str | Path) -> dict:
         key = (entity_type, normalize_entity_name(alias))
         alias_index.setdefault(key, set()).add(canonical_name)
 
+    entity_alias_index = {}
+    for name, entity_type, raw_aliases in entity_rows:
+        try:
+            parsed = json.loads(raw_aliases or "[]")
+        except (TypeError, json.JSONDecodeError):
+            parsed = []
+        if isinstance(parsed, dict):
+            parsed = list(parsed.keys())
+        if not isinstance(parsed, list):
+            parsed = []
+        for alias in parsed:
+            key = (entity_type, normalize_entity_name(alias))
+            entity_alias_index.setdefault(key, set()).add(name)
+
     return {
         "by_hash": by_hash,
         "document_count": len(documents),
@@ -59,6 +76,10 @@ def _db_identity_index(db_path: str | Path) -> dict:
         "aliases": {
             key: sorted(values)
             for key, values in alias_index.items()
+        },
+        "entity_aliases": {
+            key: sorted(values)
+            for key, values in entity_alias_index.items()
         },
     }
 
@@ -84,7 +105,7 @@ def _vault_canonical_index(root):
     return index
 
 
-def _resolve_db_entities(db_entities, vault_entities, db_aliases=None, canonical_vault_entities=None):
+def _resolve_db_entities(db_entities, vault_entities, db_aliases=None, canonical_vault_entities=None, db_entity_aliases=None):
     """Resolve DB entity references to one canonical Obsidian entity file.
 
     Resolution is intentionally conservative:
@@ -93,6 +114,7 @@ def _resolve_db_entities(db_entities, vault_entities, db_aliases=None, canonical
     missing, conflicting, or type-mismatched mapping remains REVIEW.
     """
     db_aliases = db_aliases or {}
+    db_entity_aliases = db_entity_aliases or {}
     canonical_vault_entities = canonical_vault_entities or vault_entities
     resolved, unresolved = [], []
 
@@ -120,7 +142,9 @@ def _resolve_db_entities(db_entities, vault_entities, db_aliases=None, canonical
             })
             continue
 
-        alias_targets = db_aliases.get((entity_type, normalize_entity_name(name)), [])
+        explicit_targets = db_aliases.get((entity_type, normalize_entity_name(name)), [])
+        entity_targets = db_entity_aliases.get((entity_type, normalize_entity_name(name)), [])
+        alias_targets = sorted(set(explicit_targets) | set(entity_targets))
         if len(alias_targets) != 1:
             unresolved.append({
                 "name": name,
@@ -232,6 +256,7 @@ def build_db_reconciliation_plan(previous: dict, current: dict, db_path: str | P
                     vault_entities,
                     db_index["aliases"],
                     canonical_vault_entities,
+                    db_index["entity_aliases"],
                 )
                 if vault_root
                 else {"resolved": [], "unresolved": []}
