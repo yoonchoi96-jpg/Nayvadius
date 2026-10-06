@@ -101,3 +101,52 @@ def test_vault_organization_apply_rejects_plan_for_different_root(tmp_path: Path
     # A plan must never be silently redirected to another vault.
     assert result["status"] == "REVIEW"
     assert source.exists()
+
+
+def test_vault_organization_apply_rejects_duplicate_targets_in_plan(tmp_path: Path):
+    root = tmp_path / "vault"
+    first = root / "entities" / "People" / "Alice.md"
+    second = root / "entities" / "People" / "Bob.md"
+    first.parent.mkdir(parents=True)
+    first.write_text("# Alice\n", encoding="utf-8")
+    second.write_text("# Bob\n", encoding="utf-8")
+
+    target = "20_Entities/People/Same.md"
+    plan = {
+        "moves": [
+            {"action": "AUTO", "source": "entities/People/Alice.md", "target": target, "file_hash": _sha256(first.read_bytes())},
+            {"action": "AUTO", "source": "entities/People/Bob.md", "target": target, "file_hash": _sha256(second.read_bytes())},
+        ]
+    }
+    result = apply_vault_organization_plan(root, plan, apply=True)
+
+    assert result["status"] == "REVIEW"
+    assert first.exists()
+    assert second.exists()
+    assert not (root / target).exists()
+    assert any(item.get("reason") == "duplicate source or target in plan" for item in result["skipped"])
+
+
+def test_vault_organization_apply_rejects_source_target_collision_in_plan(tmp_path: Path):
+    root = tmp_path / "vault"
+    first = root / "entities" / "People" / "Alice.md"
+    second = root / "20_Entities" / "People" / "Bob.md"
+    first.parent.mkdir(parents=True)
+    second.parent.mkdir(parents=True)
+    first.write_text("# Alice\n", encoding="utf-8")
+    second.write_text("# Bob\n", encoding="utf-8")
+
+    plan = {
+        "moves": [
+            {"action": "AUTO", "source": "entities/People/Alice.md", "target": "20_Entities/People/Bob.md", "file_hash": _sha256(first.read_bytes())},
+            {"action": "AUTO", "source": "20_Entities/People/Bob.md", "target": "20_Entities/People/Carol.md", "file_hash": _sha256(second.read_bytes())},
+        ]
+    }
+    result = apply_vault_organization_plan(root, plan, apply=True)
+
+    assert result["status"] == "REVIEW"
+    assert first.exists()
+    assert second.exists()
+    assert (root / "20_Entities" / "People" / "Bob.md").read_text(encoding="utf-8") == "# Bob\n"
+    assert not (root / "20_Entities" / "People" / "Carol.md").exists()
+    assert any(item.get("reason") == "move collision between planned source and target" for item in result["skipped"])
