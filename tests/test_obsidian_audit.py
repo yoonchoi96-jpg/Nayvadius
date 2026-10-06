@@ -385,3 +385,38 @@ def test_obsidian_audit_fails_when_database_is_missing(tmp_path: Path, monkeypat
     except SystemExit as exc:
         assert exc.code == 1
     assert '"status": "FAIL"' in capsys.readouterr().out
+
+
+def test_vault_organization_plan_moves_legacy_entity_root_and_preserves_hash(tmp_path: Path):
+    from nayvadius.vault_organization import build_vault_organization_plan
+    root = tmp_path / "vault"
+    old = root / "20_Entities" / "Companies" / "Acme.md"
+    old.parent.mkdir(parents=True)
+    old.write_text("# Acme\n", encoding="utf-8")
+    plan = build_vault_organization_plan(root)
+    assert plan["status"] == "PLANNED"
+    assert plan["moves"][0]["source"] == "20_Entities/Companies/Acme.md"
+    assert plan["moves"][0]["target"] == "20_Entities/Organizations/Acme.md"
+
+
+def test_vault_organization_plan_reviews_path_frontmatter_conflict(tmp_path: Path):
+    from nayvadius.vault_organization import build_vault_organization_plan
+    root = tmp_path / "vault"
+    note = root / "20_Entities" / "People" / "Acme.md"
+    note.parent.mkdir(parents=True)
+    note.write_text("---\nentity_type: Organizations\n---\n# Acme\n", encoding="utf-8")
+    plan = build_vault_organization_plan(root)
+    assert plan["status"] == "REVIEW"
+    assert plan["summary"]["review"] == 1
+    assert plan["moves"] == []
+
+
+def test_vault_organization_plan_does_not_semantically_guess_free_notes(tmp_path: Path):
+    from nayvadius.vault_organization import build_vault_organization_plan
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "random.md").write_text("# Someone\n", encoding="utf-8")
+    plan = build_vault_organization_plan(root)
+    assert plan["status"] == "CLEAN"
+    assert plan["moves"] == []
+    assert plan["review"] == []
