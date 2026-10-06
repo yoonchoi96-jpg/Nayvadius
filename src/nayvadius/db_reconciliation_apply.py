@@ -134,3 +134,50 @@ def apply_db_reconciliation_plan(root: str | Path, plan: dict, backup_dir: str =
                 "error": str(exc),
                 "rollback": {"status": "FAILED" if rollback_errors else "RESTORED", "errors": rollback_errors},
                 "validation": validation}
+
+
+def verify_db_reconciliation_apply(root: str | Path, result: dict) -> dict:
+    """Verify an applied reconciliation result without mutating the vault."""
+    root = Path(root)
+    if result.get("status") != "APPLIED":
+        return {"status": "FAIL", "errors": ["apply result is not APPLIED"], "checked": 0}
+    manifest_rel = result.get("backup_manifest")
+    manifest_path = _safe_relative(root, manifest_rel or "")
+    if manifest_path is None or not manifest_path.is_file():
+        return {"status": "FAIL", "errors": ["backup manifest is missing"], "checked": 0}
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        operations = manifest.get("operations", [])
+    except (OSError, ValueError, TypeError) as exc:
+        return {"status": "FAIL", "errors": [f"invalid backup manifest: {exc}"], "checked": 0}
+
+    errors = []
+    checked = 0
+    for operation in operations:
+        kind = operation.get("operation")
+        if kind == "move":
+            source = _safe_relative(root, operation.get("original_path", ""))
+            target = _safe_relative(root, operation.get("new_path", ""))
+            if source is None or target is None:
+                errors.append("manifest contains an unsafe move path")
+                continue
+            if source.exists():
+                errors.append(f"source still exists: {operation.get('original_path')}")
+            if not target.is_file():
+                errors.append(f"target is missing: {operation.get('new_path')}")
+            elif _sha256(target.read_bytes()) != operation.get("original_hash"):
+                errors.append(f"target hash mismatch: {operation.get('new_path')}")
+            checked += 1
+        elif kind == "wikilink_rewrite":
+            path = _safe_relative(root, operation.get("path", ""))
+            if path is None or not path.is_file():
+                errors.append(f"rewritten file is missing: {operation.get('path')}")
+            elif _sha256(path.read_bytes()) != operation.get("new_hash"):
+                errors.append(f"rewritten file hash mismatch: {operation.get('path')}")
+            checked += 1
+    return {
+        "status": "VERIFIED" if not errors else "FAIL",
+        "errors": errors,
+        "checked": checked,
+        "manifest": manifest_rel,
+    }
