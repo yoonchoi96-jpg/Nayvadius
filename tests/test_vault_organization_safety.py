@@ -150,3 +150,28 @@ def test_vault_organization_apply_rejects_source_target_collision_in_plan(tmp_pa
     assert (root / "20_Entities" / "People" / "Bob.md").read_text(encoding="utf-8") == "# Bob\n"
     assert not (root / "20_Entities" / "People" / "Carol.md").exists()
     assert any(item.get("reason") == "move collision between planned source and target" for item in result["skipped"])
+
+
+
+def test_vault_organization_apply_rejects_tampered_plan_fingerprint(tmp_path: Path):
+    root = tmp_path / "vault"
+    source = root / "entities" / "People" / "Alice.md"
+    source.parent.mkdir(parents=True)
+    source.write_text("# Alice\n", encoding="utf-8")
+
+    plan = build_vault_organization_plan(root)
+    plan["moves"][0]["target"] = "20_Entities/People/Tampered.md"
+
+    result = apply_vault_organization_plan(root, plan, apply=True)
+
+    assert result["status"] == "REVIEW"
+    assert source.exists()
+    assert not (root / "20_Entities" / "People" / "Tampered.md").exists()
+
+
+def test_vault_organization_apply_rejects_legacy_plan_schema(tmp_path: Path):
+    root = tmp_path / "vault"
+    result = apply_vault_organization_plan(root, {"moves": []}, apply=True)
+
+    assert result["status"] == "REVIEW"
+    assert result["skipped"][0]["reason"] == "invalid or legacy plan schema"
