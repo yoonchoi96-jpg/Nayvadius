@@ -381,3 +381,50 @@ def test_legacy_db_without_entities_table_remains_reconcilable(tmp_path: Path):
 
     assert plan["summary"]["auto"] == 1
     assert plan["db_summary"]["entity_metadata_aliases"] == 0
+
+
+def test_legacy_db_without_alias_tables_remains_reconcilable(tmp_path: Path):
+    db = tmp_path / "legacy-no-alias.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE documents(id TEXT, title TEXT, content_hash TEXT, source TEXT)")
+        conn.execute("CREATE TABLE document_entities(document_id TEXT, entity_name TEXT, entity_type TEXT)")
+        conn.execute(
+            "INSERT INTO documents VALUES('doc-1','Note',?, 'readwise')",
+            (_hash("same"),),
+        )
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "old.md").write_text("same", encoding="utf-8")
+    previous = snapshot_vault(root)
+    (root / "old.md").rename(root / "new.md")
+
+    plan = build_db_reconciliation_plan(previous, snapshot_vault(root), db)
+
+    assert plan["summary"]["auto"] == 1
+    assert plan["db_summary"]["explicit_aliases"] == 0
+    assert plan["db_summary"]["entity_metadata_aliases"] == 0
+
+
+def test_scalar_entity_alias_metadata_resolves_to_canonical(tmp_path: Path):
+    db = tmp_path / "state.db"
+    _db(db, [("doc-1", "Note", _hash("same"), "readwise")])
+    with sqlite3.connect(db) as conn:
+        conn.execute("INSERT INTO document_entities VALUES('doc-1','Acme','Organizations')")
+        conn.execute(
+            "INSERT INTO entities VALUES('Acme','Organizations','\"Acme Corporation\"')"
+        )
+
+    root = tmp_path / "vault"
+    (root / "entities" / "Organizations").mkdir(parents=True)
+    (root / "entities" / "Organizations" / "Acme Corporation.md").write_text(
+        "---\nname: Acme Corporation\n---\n", encoding="utf-8"
+    )
+    (root / "note.md").write_text("[[Acme Corporation]]", encoding="utf-8")
+    previous = snapshot_vault(root)
+    (root / "note.md").rename(root / "renamed.md")
+
+    plan = build_db_reconciliation_plan(previous, snapshot_vault(root), db, vault_root=root)
+    resolution = plan["auto"][0]["entity_resolution"]["resolved"][0]
+
+    assert resolution["alias_sources"] == ["entities.aliases"]
