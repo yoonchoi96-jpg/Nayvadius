@@ -8,7 +8,7 @@ from pathlib import Path
 from .obsidian_audit import _entity_files, _wikilink_matches, compare_vault_snapshots, normalize_entity_name, parse_wikilink, snapshot_vault
 
 
-PLAN_VERSION = 2
+PLAN_VERSION = 3
 
 
 def _fingerprint(plan: dict) -> str:
@@ -144,13 +144,15 @@ def _resolve_db_entities(db_entities, vault_entities, db_aliases=None, canonical
 
         explicit_targets = db_aliases.get((entity_type, normalize_entity_name(name)), [])
         entity_targets = db_entity_aliases.get((entity_type, normalize_entity_name(name)), [])
-        alias_targets = sorted(set(explicit_targets) | set(entity_targets))
+        explicit_set = set(explicit_targets)
+        entity_set = set(entity_targets)
+        alias_targets = sorted(explicit_set | entity_set)
         if len(alias_targets) != 1:
             unresolved.append({
                 "name": name,
                 "entity_type": entity_type,
                 "reason": (
-                    "conflicting DB entity_aliases mappings"
+                    "conflicting DB entity alias mappings"
                     if len(alias_targets) > 1
                     else "no canonical Obsidian entity file or DB alias match"
                 ),
@@ -159,6 +161,11 @@ def _resolve_db_entities(db_entities, vault_entities, db_aliases=None, canonical
             continue
 
         canonical_name = alias_targets[0]
+        alias_sources = []
+        if canonical_name in explicit_set:
+            alias_sources.append("entity_aliases")
+        if canonical_name in entity_set:
+            alias_sources.append("entities.aliases")
         candidates = {
             x["relative"]: x
             for x in vault_entities.get(
@@ -174,6 +181,7 @@ def _resolve_db_entities(db_entities, vault_entities, db_aliases=None, canonical
                 "file": entity["relative"],
                 "resolution_method": "db_alias",
                 "db_alias": name,
+                "alias_sources": alias_sources,
             })
         elif len(candidates) > 1:
             unresolved.append({
