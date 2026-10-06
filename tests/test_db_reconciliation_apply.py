@@ -7,7 +7,7 @@ def plan(root):
     digest = hashlib.sha256(b"same").hexdigest()
     p={"title":"Nayvadius DB ↔ Vault Reconciliation Plan","plan_version":3,"status":"PLANNED",
        "previous_root":str(root),"current_root":str(root),"db_path":str(root/"state.db"),
-       "auto":[{"action":"AUTO","kind":"move","source":"old.md","target":"new.md","hash":digest,
+       "auto":[{"action":"AUTO","kind":"move","source":"old.md","target":"20_Entities/People/New.md","hash":digest,
                 "entity_resolution":{"resolved":[],"unresolved":[]},
                 "wikilink_resolution":{"status":"checked","links":[],"unresolved":[]}}],
        "review":[],"skipped":[],"diff":{"summary":{"changed":1}},"db_summary":{},
