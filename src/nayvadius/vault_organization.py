@@ -100,3 +100,131 @@ def write_vault_organization_plan(plan: dict, path: str | Path) -> None:
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _safe_relative(root: Path, value: str) -> Path | None:
+    candidate = Path(value)
+    if candidate.is_absolute() or not value or ".." in candidate.parts:
+        return None
+    resolved = (root / candidate).resolve()
+    try:
+        resolved.relative_to(root.resolve())
+    except ValueError:
+        return None
+    return resolved
+
+
+def _rewrite_links_for_move(text: str, old_stem: str, new_stem: str) -> tuple[str, list[dict]]:
+    # Reuse the audit module's parser/rewrite machinery while preserving heading/display.
+    from .obsidian_audit import _rewrite_target
+    updated, count, links = _rewrite_target(
+        text, {_norm(old_stem): new_stem}
+    )
+    return updated, links
+
+
+def apply_vault_organization_plan(
+    root: str | Path,
+    plan: dict,
+    backup_dir: str = ".nayvadius-backup",
+    apply: bool = False,
+) -> dict:
+    """Apply only AUTO moves from a hash-validated plan, with backups and rollback."""
+    root = Path(root)
+    moves = [item for item in plan.get("moves", []) if isinstance(item, dict)]
+    skipped = list(plan.get("review", [])) + list(plan.get("skipped", []))
+    valid = []
+    for item in moves:
+        source = _safe_relative(root, item.get("source", ""))
+        target = _safe_relative(root, item.get("target", ""))
+        expected = item.get("file_hash")
+        if source is None or target is None or source == target:
+            skipped.append({"item": item, "reason": "invalid source or target"})
+            continue
+        if not source.is_file() or not expected or _sha256(source.read_bytes()) != expected:
+            skipped.append({"item": item, "reason": "source changed since planning"})
+            continue
+        if target.exists():
+            skipped.append({"item": item, "reason": "target now exists"})
+            continue
+        valid.append((item, source, target))
+
+    if not apply:
+        return {
+            "status": "PLANNED" if valid else ("REVIEW" if skipped else "CLEAN"),
+            "applied": [], "would_move": [
+                {"source": i["source"], "target": i["target"]} for i, _, _ in valid
+            ],
+            "skipped": skipped, "changed": 0,
+        }
+
+    operation = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    backup_root = root / backup_dir / "vault-organization" / operation
+    manifest = []
+    rewritten = {}
+    try:
+        for item, source, target in valid:
+            backup = backup_root / source.relative_to(root)
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            backup.write_bytes(source.read_bytes())
+            manifest.append({
+                "operation": "vault_move",
+                "original_path": source.relative_to(root).as_posix(),
+                "new_path": target.relative_to(root).as_posix(),
+                "backup_path": backup.relative_to(root).as_posix(),
+                "original_hash": _sha256(source.read_bytes()),
+            })
+
+        # Rewrite links before moving, so rollback can restore the exact originals.
+        replacements = {
+            _norm(Path(item["source"]).stem): Path(item["target"]).stem
+            for item, _, _ in valid
+        }
+        for path in _iter_markdown(root):
+            if any(path.resolve() == source.resolve() for _, source, _ in valid):
+                continue
+            original = path.read_text(encoding="utf-8")
+            updated, links = _rewrite_links_for_move(original, "", "")
+            # Apply all source->target replacements in one pass through the canonical helper.
+            from .obsidian_audit import _rewrite_target
+            updated, _, links = _rewrite_target(original, replacements)
+            if updated != original:
+                rewritten[path] = (original, updated, links)
+                backup = backup_root / "rewrites" / path.relative_to(root)
+                backup.parent.mkdir(parents=True, exist_ok=True)
+                backup.write_bytes(original.encode("utf-8"))
+                manifest.append({
+                    "operation": "wikilink_rewrite",
+                    "original_path": path.relative_to(root).as_posix(),
+                    "new_path": path.relative_to(root).as_posix(),
+                    "backup_path": backup.relative_to(root).as_posix(),
+                    "original_hash": _sha256(original.encode("utf-8")),
+                    "new_hash": _sha256(updated.encode("utf-8")),
+                })
+
+        for path, (_, updated, _) in rewritten.items():
+            temp = path.with_suffix(path.suffix + ".nayvadius.tmp")
+            temp.write_text(updated, encoding="utf-8")
+            temp.replace(path)
+        for _, source, target in valid:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            source.rename(target)
+
+        manifest_path = backup_root / "manifest.json"
+        manifest_path.write_text(json.dumps({"operations": manifest}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return {
+            "status": "APPLIED" if valid else ("REVIEW" if skipped else "CLEAN"),
+            "applied": [{"source": i["source"], "target": i["target"]} for i, _, _ in valid],
+            "skipped": skipped, "changed": len(valid) + len(rewritten),
+            "backup_manifest": manifest_path.relative_to(root).as_posix(),
+        }
+    except Exception as exc:
+        for path, (original, _, _) in rewritten.items():
+            path.write_text(original, encoding="utf-8")
+        for _, source, target in valid:
+            if target.exists() and not source.exists():
+                target.rename(source)
+        return {
+            "status": "FAIL", "applied": [], "skipped": skipped,
+            "changed": 0, "error": str(exc),
+        }
