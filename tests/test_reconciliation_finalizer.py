@@ -1,5 +1,6 @@
 from pathlib import Path
 import sqlite3
+import json
 
 from nayvadius.reconciliation_finalizer import finalize_db_reconciliation_provenance
 
@@ -7,6 +8,9 @@ from nayvadius.reconciliation_finalizer import finalize_db_reconciliation_proven
 def test_finalizer_dry_run(tmp_path: Path):
     db = tmp_path / "state.db"
     db.touch()
+    manifest = tmp_path / ".nayvadius-backup/db-reconciliation/x/manifest.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(json.dumps({"operations": [{"operation": "move", "original_path": "old.md", "new_path": "new.md", "original_hash": "a" * 64}]}))
     apply_result = {
         "status": "APPLIED",
         "backup_manifest": ".nayvadius-backup/db-reconciliation/x/manifest.json",
@@ -33,6 +37,13 @@ def test_finalizer_requires_verification(tmp_path: Path):
 def test_finalizer_records_only_verified_apply(tmp_path: Path):
     db = tmp_path / "state.db"
     db.touch()
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE documents (id TEXT PRIMARY KEY, content_hash TEXT)")
+    conn.execute("INSERT INTO documents VALUES (?, ?)", ("doc-1", "b" * 64))
+    conn.commit()
+    conn.close()
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"operations": [{"operation": "move", "original_path": "old.md", "new_path": "new.md", "original_hash": "b" * 64}]}))
     entry = {"document_id": "doc-1", "source": "old.md", "target": "new.md", "hash": "b" * 64}
     result = finalize_db_reconciliation_provenance(
         db, tmp_path,
