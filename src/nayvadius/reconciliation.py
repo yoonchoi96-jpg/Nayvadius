@@ -73,6 +73,8 @@ def _db_identity_index(db_path: str | Path) -> dict:
             parsed = []
         if isinstance(parsed, dict):
             parsed = list(parsed.keys())
+        elif isinstance(parsed, str):
+            parsed = [parsed]
         if not isinstance(parsed, list):
             parsed = []
         for alias in parsed:
