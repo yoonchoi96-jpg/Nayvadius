@@ -88,7 +88,7 @@ def _resolve_db_entities(db_entities, vault_entities, db_aliases=None, canonical
     """Resolve DB entity references to one canonical Obsidian entity file.
 
     Resolution is intentionally conservative:
-    exact canonical/Obsidian alias matches are preferred; an explicit DB
+    exact canonical entity matches are preferred; an explicit DB
     entity_aliases mapping is then followed to the canonical DB name. Any
     missing, conflicting, or type-mismatched mapping remains REVIEW.
     """
