@@ -113,7 +113,11 @@ def apply_db_reconciliation_plan(root: str | Path, plan: dict, backup_dir: str =
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         manifest_path.write_text(json.dumps({"operations": manifest}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         return {"status": "APPLIED", "applied": [
-            {"source": i["source"], "target": i["target"], "hash": i["hash"]} for i, _, _ in candidates
+            {"source": i["source"], "target": i["target"], "hash": i["hash"],
+             "document_id": i.get("document_id"),
+             "entity_resolution": i.get("entity_resolution"),
+             "wikilink_resolution": i.get("wikilink_resolution")}
+            for i, _, _ in candidates
         ], "skipped": skipped, "changed": len(candidates) + len(rewritten),
         "backup_manifest": manifest_path.relative_to(root).as_posix(), "validation": validation}
     except Exception as exc:
