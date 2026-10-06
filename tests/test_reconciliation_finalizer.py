@@ -1,8 +1,13 @@
 from pathlib import Path
 import sqlite3
 import json
+import hashlib
 
 from nayvadius.reconciliation_finalizer import finalize_db_reconciliation_provenance
+
+
+def _hash(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()
 
 
 def test_finalizer_dry_run(tmp_path: Path):
@@ -39,12 +44,12 @@ def test_finalizer_records_only_verified_apply(tmp_path: Path):
     db.touch()
     conn = sqlite3.connect(db)
     conn.execute("CREATE TABLE documents (id TEXT PRIMARY KEY, content_hash TEXT)")
-    conn.execute("INSERT INTO documents VALUES (?, ?)", ("doc-1", "b" * 64))
+    conn.execute("INSERT INTO documents VALUES (?, ?)", ("doc-1", _hash("same")))
     conn.commit()
     conn.close()
     manifest = tmp_path / "manifest.json"
-    manifest.write_text(json.dumps({"operations": [{"operation": "move", "original_path": "old.md", "new_path": "new.md", "original_hash": "b" * 64}]}))
-    entry = {"document_id": "doc-1", "source": "old.md", "target": "new.md", "hash": "b" * 64}
+    manifest.write_text(json.dumps({"operations": [{"operation": "move", "original_path": "old.md", "new_path": "new.md", "original_hash": _hash("same")}]}))
+    entry = {"document_id": "doc-1", "source": "old.md", "target": "new.md", "hash": _hash("same")}
     result = finalize_db_reconciliation_provenance(
         db, tmp_path,
         {"status": "APPLIED", "backup_manifest": "manifest.json", "applied": [entry]},
@@ -121,7 +126,7 @@ def test_finalizer_is_idempotent(tmp_path: Path):
     db = tmp_path / "state.db"
     conn = sqlite3.connect(db)
     conn.execute("CREATE TABLE documents (id TEXT PRIMARY KEY, content_hash TEXT)")
-    conn.execute("INSERT INTO documents VALUES (?, ?)", ("doc-1", "d" * 64))
+    conn.execute("INSERT INTO documents VALUES (?, ?)", ("doc-1", _hash("same")))
     conn.commit()
     conn.close()
 
@@ -130,7 +135,7 @@ def test_finalizer_is_idempotent(tmp_path: Path):
         "operation": "move",
         "original_path": "old.md",
         "new_path": "new.md",
-        "original_hash": "d" * 64,
+        "original_hash": _hash("same"),
     }]}))
     apply_result = {
         "status": "APPLIED",
@@ -139,7 +144,7 @@ def test_finalizer_is_idempotent(tmp_path: Path):
             "document_id": "doc-1",
             "source": "old.md",
             "target": "new.md",
-            "hash": "d" * 64,
+            "hash": _hash("same"),
         }],
     }
     verification = {"status": "VERIFIED"}
@@ -197,21 +202,21 @@ def test_finalizer_is_transactional_across_multiple_entries(tmp_path: Path):
         conn.execute("CREATE TABLE documents (id TEXT PRIMARY KEY, content_hash TEXT)")
         conn.executemany(
             "INSERT INTO documents VALUES (?, ?)",
-            [("doc-1", "f" * 64), ("doc-2", "0" * 64)],
+            [("doc-1", _hash("same")), ("doc-2", _hash("other"))],
         )
 
     manifest = tmp_path / "manifest.json"
     manifest.write_text(json.dumps({"operations": [
-        {"operation": "move", "original_path": "old1.md", "new_path": "new1.md", "original_hash": "f" * 64},
+        {"operation": "move", "original_path": "old1.md", "new_path": "new1.md", "original_hash": _hash("same")},
         {"operation": "move", "original_path": "old2.md", "new_path": "new2.md", "original_hash": "f" * 64},
     ]}))
-    (tmp_path / "new1.md").write_text("f", encoding="utf-8")
+    (tmp_path / "new1.md").write_text("same", encoding="utf-8")
     (tmp_path / "new2.md").write_text("f", encoding="utf-8")
     apply_result = {
         "status": "APPLIED",
         "backup_manifest": "manifest.json",
         "applied": [
-            {"document_id": "doc-1", "source": "old1.md", "target": "new1.md", "hash": "f" * 64},
+            {"document_id": "doc-1", "source": "old1.md", "target": "new1.md", "hash": _hash("same")},
             {"document_id": "doc-2", "source": "old2.md", "target": "new2.md", "hash": "f" * 64},
         ],
     }
@@ -232,17 +237,17 @@ def test_finalizer_reports_new_and_existing_provenance_separately(tmp_path: Path
     db = tmp_path / "state.db"
     with sqlite3.connect(db) as conn:
         conn.execute("CREATE TABLE documents (id TEXT PRIMARY KEY, content_hash TEXT)")
-        conn.execute("INSERT INTO documents VALUES (?, ?)", ("doc-1", "1" * 64))
+        conn.execute("INSERT INTO documents VALUES (?, ?)", ("doc-1", _hash("same")))
 
     manifest = tmp_path / "manifest.json"
     manifest.write_text(json.dumps({"operations": [{
-        "operation": "move", "original_path": "old.md", "new_path": "new.md", "original_hash": "1" * 64
+        "operation": "move", "original_path": "old.md", "new_path": "new.md", "original_hash": _hash("same")
     }]}))
-    (tmp_path / "new.md").write_text("1", encoding="utf-8")
+    (tmp_path / "new.md").write_text("same", encoding="utf-8")
     apply_result = {
         "status": "APPLIED",
         "backup_manifest": "manifest.json",
-        "applied": [{"document_id": "doc-1", "source": "old.md", "target": "new.md", "hash": "1" * 64}],
+        "applied": [{"document_id": "doc-1", "source": "old.md", "target": "new.md", "hash": _hash("same")}],
     }
 
     first = finalize_db_reconciliation_provenance(db, tmp_path, apply_result, {"status": "VERIFIED"}, apply=True)
