@@ -217,7 +217,7 @@ def _resolve_db_entities(db_entities, vault_entities, db_aliases=None, canonical
 def _wikilink_resolution(root, relative_path, vault_entities):
     path = Path(root) / relative_path
     if not path.exists() or path.suffix.lower() != ".md":
-        return {"status": "unavailable", "links": [], "unresolved": []}
+        return {"status": "unavailable", "links": [], "unresolved": [], "non_entity_links": []}
     links, unresolved, non_entity_links = [], [], []
     for match in _wikilink_matches(path.read_text(encoding="utf-8")):
         target = parse_wikilink(match.group(2))["target"]
