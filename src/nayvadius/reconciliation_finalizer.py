@@ -7,9 +7,23 @@ reconciliation facts after a successful, independently verified apply.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+
+SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+
+def _safe_relative(root: Path, value: str) -> Path | None:
+    candidate = Path(str(value or ""))
+    if candidate.is_absolute() or not value or ".." in candidate.parts:
+        return None
+    resolved = (root / candidate).resolve()
+    try:
+        resolved.relative_to(root.resolve())
+    except ValueError:
+        return None
+    return resolved
 
 
 def finalize_db_reconciliation_provenance(
