@@ -10,6 +10,7 @@ def _db(path, rows):
     with sqlite3.connect(path) as conn:
         conn.execute("CREATE TABLE documents(id TEXT, title TEXT, content_hash TEXT, source TEXT)")
         conn.execute("CREATE TABLE document_entities(document_id TEXT, entity_name TEXT, entity_type TEXT)")
+        conn.execute("CREATE TABLE entity_aliases(alias TEXT NOT NULL, canonical_name TEXT NOT NULL, entity_type TEXT NOT NULL)")
         conn.executemany("INSERT INTO documents VALUES(?,?,?,?)", rows)
 
 
@@ -140,3 +141,86 @@ def test_move_is_review_when_db_entity_has_no_canonical_vault_file(tmp_path: Pat
     plan = build_db_reconciliation_plan(previous, snapshot_vault(root), db, vault_root=root)
     assert plan["summary"]["auto"] == 0
     assert plan["review"][0]["db_check"] == "DB identity matched but canonical entity/link resolution is incomplete"
+
+
+def test_move_resolves_db_entity_alias_to_canonical_vault_entity(tmp_path: Path):
+    db = tmp_path / "state.db"
+    _db(db, [("doc-1", "Note", _hash("same"), "readwise")])
+    with sqlite3.connect(db) as conn:
+        conn.execute("INSERT INTO document_entities VALUES('doc-1','Alice Corp','Organizations')")
+        conn.execute(
+            "INSERT INTO entity_aliases VALUES('Alice Corp','Alice Corporation','Organizations')"
+        )
+
+    root = tmp_path / "vault"
+    (root / "entities" / "Organizations").mkdir(parents=True)
+    (root / "entities" / "Organizations" / "Alice Corporation.md").write_text(
+        "---\nname: Alice Corporation\n---\n", encoding="utf-8"
+    )
+    (root / "note.md").write_text("[[Alice Corporation]]", encoding="utf-8")
+    previous = snapshot_vault(root)
+    (root / "note.md").rename(root / "renamed.md")
+
+    plan = build_db_reconciliation_plan(previous, snapshot_vault(root), db, vault_root=root)
+
+    assert plan["summary"]["auto"] == 1
+    resolution = plan["auto"][0]["entity_resolution"]["resolved"][0]
+    assert resolution["resolution_method"] == "db_alias"
+    assert resolution["db_alias"] == "Alice Corp"
+    assert resolution["canonical_name"] == "Alice Corporation"
+
+
+def test_conflicting_db_entity_aliases_force_review(tmp_path: Path):
+    db = tmp_path / "state.db"
+    _db(db, [("doc-1", "Note", _hash("same"), "readwise")])
+    with sqlite3.connect(db) as conn:
+        conn.execute("INSERT INTO document_entities VALUES('doc-1','Acme','Organizations')")
+        conn.executemany(
+            "INSERT INTO entity_aliases VALUES(?,?,?)",
+            [
+                ("Acme", "Acme Holdings", "Organizations"),
+                ("Acme", "Acme Corp", "Organizations"),
+            ],
+        )
+
+    root = tmp_path / "vault"
+    (root / "entities" / "Organizations").mkdir(parents=True)
+    for name in ("Acme Holdings", "Acme Corp"):
+        (root / "entities" / "Organizations" / f"{name}.md").write_text(
+            f"---\nname: {name}\n---\n", encoding="utf-8"
+        )
+    (root / "note.md").write_text("[[Acme Holdings]]", encoding="utf-8")
+    previous = snapshot_vault(root)
+    (root / "note.md").rename(root / "renamed.md")
+
+    plan = build_db_reconciliation_plan(previous, snapshot_vault(root), db, vault_root=root)
+
+    assert plan["summary"]["auto"] == 0
+    entity_check = plan["review"][0]["entity_resolution"]
+    assert entity_check["unresolved"][0]["reason"] == "conflicting DB entity_aliases mappings"
+    assert entity_check["unresolved"][0]["canonical_names"] == ["Acme Corp", "Acme Holdings"]
+
+
+def test_db_alias_type_mismatch_does_not_resolve(tmp_path: Path):
+    db = tmp_path / "state.db"
+    _db(db, [("doc-1", "Note", _hash("same"), "readwise")])
+    with sqlite3.connect(db) as conn:
+        conn.execute("INSERT INTO document_entities VALUES('doc-1','Apple','Organizations')")
+        conn.execute(
+            "INSERT INTO entity_aliases VALUES('Apple','Apple Inc.','Companies')"
+        )
+
+    root = tmp_path / "vault"
+    (root / "entities" / "Organizations").mkdir(parents=True)
+    (root / "entities" / "Organizations" / "Apple.md").write_text(
+        "---\nname: Apple\n---\n", encoding="utf-8"
+    )
+    (root / "note.md").write_text("[[Apple]]", encoding="utf-8")
+    previous = snapshot_vault(root)
+    (root / "note.md").rename(root / "renamed.md")
+
+    plan = build_db_reconciliation_plan(previous, snapshot_vault(root), db, vault_root=root)
+
+    assert plan["summary"]["auto"] == 0
+    unresolved = plan["review"][0]["entity_resolution"]["unresolved"][0]
+    assert unresolved["reason"] == "no canonical Obsidian entity file or DB alias match"
