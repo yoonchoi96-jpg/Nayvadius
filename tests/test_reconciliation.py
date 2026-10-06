@@ -103,3 +103,40 @@ def test_added_note_reports_existing_db_match_as_review(tmp_path: Path):
     assert item["kind"] == "added"
     assert item["document_id"] == "doc-1"
     assert item["db_check"] == "hash matches existing DB document; path identity is new"
+
+
+def test_move_requires_canonical_entity_and_wikilink_resolution_when_live_vault_is_available(tmp_path: Path):
+    db = tmp_path / "state.db"
+    _db(db, [("doc-1", "Note", _hash("same"), "readwise")])
+    with sqlite3.connect(db) as conn:
+        conn.execute("INSERT INTO document_entities VALUES('doc-1','Alice','People')")
+
+    root = tmp_path / "vault"
+    (root / "entities" / "People").mkdir(parents=True)
+    (root / "entities" / "People" / "Alice.md").write_text("---\nname: Alice\n---\n", encoding="utf-8")
+    (root / "note.md").write_text("[[Alice]]", encoding="utf-8")
+    previous = snapshot_vault(root)
+    (root / "note.md").rename(root / "renamed.md")
+
+    plan = build_db_reconciliation_plan(previous, snapshot_vault(root), db, vault_root=root)
+    item = plan["auto"][0]
+    assert item["document_id"] == "doc-1"
+    assert item["entity_resolution"]["resolved"][0]["file"] == "entities/People/Alice.md"
+    assert item["wikilink_resolution"]["links"][0]["canonical_file"] == "entities/People/Alice.md"
+
+
+def test_move_is_review_when_db_entity_has_no_canonical_vault_file(tmp_path: Path):
+    db = tmp_path / "state.db"
+    _db(db, [("doc-1", "Note", _hash("same"), "readwise")])
+    with sqlite3.connect(db) as conn:
+        conn.execute("INSERT INTO document_entities VALUES('doc-1','Alice','People')")
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "note.md").write_text("plain", encoding="utf-8")
+    previous = snapshot_vault(root)
+    (root / "note.md").rename(root / "renamed.md")
+
+    plan = build_db_reconciliation_plan(previous, snapshot_vault(root), db, vault_root=root)
+    assert plan["summary"]["auto"] == 0
+    assert plan["review"][0]["db_check"] == "DB identity matched but canonical entity/link resolution is incomplete"
