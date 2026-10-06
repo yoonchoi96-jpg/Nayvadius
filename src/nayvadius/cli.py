@@ -14,6 +14,7 @@ from .reconciliation import (
     build_live_db_reconciliation_plan, write_db_reconciliation_plan, write_vault_snapshot,
 )
 from .reconciliation_guard import validate_db_reconciliation_plan
+from .db_reconciliation_apply import apply_db_reconciliation_plan
 from .vault_organization import (
     build_vault_organization_plan, write_vault_organization_plan,
     apply_vault_organization_plan,
@@ -26,7 +27,7 @@ def main() -> None:
         "status", "process", "retry-failed", "qa", "obsidian-audit",
         "obsidian-normalize", "entity-merge-plan", "entity-merge-apply",
         "vault-organization-plan", "vault-organization-apply", "db-reconcile-plan",
-        "db-reconcile-verify", "maintenance",
+        "db-reconcile-verify", "db-reconcile-apply", "maintenance",
     ])
     parser.add_argument("--input", default="data/input.jsonl")
     parser.add_argument("--db", default="data/nayvadius.db")
@@ -69,6 +70,16 @@ def main() -> None:
         result = validate_db_reconciliation_plan(plan, root=args.output)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         if result["status"] == "FAIL":
+            raise SystemExit(1)
+        return
+
+    if args.command == "db-reconcile-apply":
+        plan_path = Path(args.plan or (str(args.output).rstrip("/") + "/db_reconciliation_plan.json"))
+        with plan_path.open(encoding="utf-8") as fh:
+            plan = json.load(fh)
+        result = apply_db_reconciliation_plan(args.output, plan, apply=args.apply)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if result.get("status") == "FAIL":
             raise SystemExit(1)
         return
 
