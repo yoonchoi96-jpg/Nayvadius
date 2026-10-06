@@ -125,6 +125,22 @@ def apply_vault_organization_plan(
         if source is None or target is None or source == target:
             skipped.append({"item": item, "reason": "invalid source or target"})
             continue
+
+        source_rel = source.relative_to(root)
+        target_rel = target.relative_to(root)
+        # Never allow a hand-edited/tampered plan to move system or backup files.
+        if source_rel.parts and source_rel.parts[0] in SYSTEM_DIRS:
+            skipped.append({"item": item, "reason": "source is a protected system path"})
+            continue
+        if (
+            len(target_rel.parts) < 3
+            or target_rel.parts[0] != "20_Entities"
+            or _canonical_domain(target_rel.parts[1]) != target_rel.parts[1]
+            or target_rel.suffix.lower() != ".md"
+        ):
+            skipped.append({"item": item, "reason": "target is not a canonical entity markdown path"})
+            continue
+
         if not source.is_file() or not expected or _sha256(source.read_bytes()) != expected:
             skipped.append({"item": item, "reason": "source changed since planning"})
             continue
