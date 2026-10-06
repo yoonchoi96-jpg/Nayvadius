@@ -228,6 +228,15 @@ def _wikilink_resolution(root, relative_path, vault_entities):
             if key == normalize_entity_name(target):
                 for item in items:
                     candidates[item["relative"]] = item
+
+        # Resolve path-qualified entity links as well as bare entity names.
+        target_path = target.removesuffix(".md").strip("/")
+        if target_path:
+            for items in vault_entities.values():
+                for item in items:
+                    entity_path = item["relative"].removesuffix(".md").strip("/")
+                    if target_path == entity_path:
+                        candidates[item["relative"]] = item
         if len(candidates) == 1:
             item = next(iter(candidates.values()))
             links.append({"target": target, "canonical_file": item["relative"], "entity_type": item["domain"]})
