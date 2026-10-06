@@ -395,6 +395,49 @@ def audit_vault(root: str | Path) -> dict:
     }
 
 
+
+def snapshot_vault(root: str | Path) -> dict:
+    """Create a deterministic Markdown-only vault snapshot for change detection."""
+    root = Path(root)
+    files = {}
+    if not root.exists():
+        return {"version": 1, "root": str(root), "files": files}
+    for path in _iter_markdown(root):
+        relative = path.relative_to(root).as_posix()
+        data = path.read_bytes()
+        files[relative] = {"hash": _sha256(data), "size": len(data)}
+    return {"version": 1, "root": str(root), "files": files}
+
+
+def compare_vault_snapshots(previous: dict, current: dict) -> dict:
+    """Classify deterministic vault changes without semantic inference."""
+    previous_files = previous.get("files", {}) if isinstance(previous, dict) else {}
+    current_files = current.get("files", {}) if isinstance(current, dict) else {}
+    added = sorted(set(current_files) - set(previous_files))
+    deleted = sorted(set(previous_files) - set(current_files))
+    modified = sorted(path for path in set(previous_files) & set(current_files)
+                      if previous_files[path].get("hash") != current_files[path].get("hash"))
+    deleted_by_hash = {}
+    for path in deleted:
+        file_hash = previous_files[path].get('hash')
+        if file_hash: deleted_by_hash.setdefault(file_hash, []).append(path)
+    added_by_hash = {}
+    for path in added:
+        file_hash = current_files[path].get('hash')
+        if file_hash: added_by_hash.setdefault(file_hash, []).append(path)
+    moved = []
+    moved_from, moved_to = set(), set()
+    for file_hash in sorted(set(deleted_by_hash) & set(added_by_hash)):
+        old_paths, new_paths = deleted_by_hash[file_hash], added_by_hash[file_hash]
+        if len(old_paths) == 1 and len(new_paths) == 1:
+            moved.append({"from": old_paths[0], "to": new_paths[0], "hash": file_hash})
+            moved_from.add(old_paths[0]); moved_to.add(new_paths[0])
+    added = [path for path in added if path not in moved_to]
+    deleted = [path for path in deleted if path not in moved_from]
+    return {"version": 1, "added": added, "deleted": deleted, "modified": modified, "moved": moved,
+            "summary": {"added": len(added), "deleted": len(deleted), "modified": len(modified),
+                        "moved": len(moved), "changed": len(added)+len(deleted)+len(modified)+len(moved)}}
+
 def write_audit_report(report: dict, path: str | Path) -> None:
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
