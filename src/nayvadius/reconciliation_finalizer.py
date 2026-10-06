@@ -43,15 +43,44 @@ def finalize_db_reconciliation_provenance(
     if not isinstance(entries, list):
         return {"status": "FAIL", "recorded": 0, "reason": "invalid applied entries"}
 
+    vault_root = Path(vault_root)
+    manifest_rel = str(apply_result.get("backup_manifest", ""))
+    manifest_path = _safe_relative(vault_root, manifest_rel)
+    if manifest_path is None or not manifest_path.is_file():
+        return {"status": "REVIEW", "recorded": 0, "reason": "backup manifest is missing or unsafe"}
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError) as exc:
+        return {"status": "REVIEW", "recorded": 0, "reason": f"invalid backup manifest: {exc}"}
+    operations = manifest.get("operations") if isinstance(manifest, dict) else None
+    if not isinstance(operations, list):
+        return {"status": "REVIEW", "recorded": 0, "reason": "invalid backup manifest structure"}
+    move_keys = {
+        (op.get("original_path"), op.get("new_path"), op.get("original_hash"))
+        for op in operations
+        if isinstance(op, dict) and op.get("operation") == "move"
+    }
+
+    validated = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            return {"status": "FAIL", "recorded": 0, "reason": "invalid applied entry"}
+        document_id = entry.get("document_id")
+        old_path = str(entry.get("source", ""))
+        new_path = str(entry.get("target", ""))
+        content_hash = str(entry.get("hash", ""))
+        if not document_id:
+            return {"status": "REVIEW", "recorded": 0, "reason": "AUTO entry lacks document_id", "entry": entry}
+        if not SHA256_RE.fullmatch(content_hash):
+            return {"status": "FAIL", "recorded": 0, "reason": "invalid content hash", "entry": entry}
+        if (old_path, new_path, content_hash) not in move_keys:
+            return {"status": "REVIEW", "recorded": 0, "reason": "applied entry is absent from manifest", "entry": entry}
+        validated.append((str(document_id), old_path, new_path, content_hash))
+
     if not apply:
-        return {
-            "status": "PLANNED",
-            "recorded": len(entries),
-            "entries": entries,
-        }
+        return {"status": "PLANNED", "recorded": len(validated), "entries": entries, "manifest": manifest_rel}
 
     db_path = Path(db_path)
-    vault_root = Path(vault_root)
     if not db_path.is_file():
         return {"status": "FAIL", "recorded": 0, "reason": "database is missing"}
 
