@@ -157,11 +157,21 @@ def verify_db_reconciliation_apply(root: str | Path, result: dict) -> dict:
 
     errors = []
     checked = 0
+    if not isinstance(operations, list):
+        return {"status": "FAIL", "errors": ["backup manifest operations must be a list"], "checked": 0, "manifest": manifest_rel}
+
     for operation in operations:
+        if not isinstance(operation, dict):
+            errors.append("manifest contains a non-object operation")
+            continue
         kind = operation.get("operation")
         if kind == "move":
             source = _safe_relative(root, operation.get("original_path", ""))
             target = _safe_relative(root, operation.get("new_path", ""))
+            original_hash = operation.get("original_hash")
+            if not isinstance(original_hash, str) or len(original_hash) != 64:
+                errors.append(f"move has invalid original hash: {operation.get('original_path')}")
+                continue
             if source is None or target is None:
                 errors.append("manifest contains an unsafe move path")
                 continue
@@ -169,10 +179,14 @@ def verify_db_reconciliation_apply(root: str | Path, result: dict) -> dict:
                 errors.append(f"source still exists: {operation.get('original_path')}")
             if not target.is_file():
                 errors.append(f"target is missing: {operation.get('new_path')}")
-            elif _sha256(target.read_bytes()) != operation.get("original_hash"):
+            elif _sha256(target.read_bytes()) != original_hash:
                 errors.append(f"target hash mismatch: {operation.get('new_path')}")
             checked += 1
         elif kind == "wikilink_rewrite":
+            new_hash = new_hash
+            if not isinstance(new_hash, str) or len(new_hash) != 64:
+                errors.append(f"wikilink rewrite has invalid new hash: {operation.get('path')}")
+                continue
             path = _safe_relative(root, operation.get("path", ""))
             if path is None or not path.is_file():
                 errors.append(f"rewritten file is missing: {operation.get('path')}")
