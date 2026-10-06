@@ -184,6 +184,36 @@ def _resolve_db_entities(db_entities, vault_entities, db_aliases=None, canonical
                 (entity_type, normalize_entity_name(canonical_name)), []
             )
         }
+        # If the DB canonical name itself is represented as an Obsidian alias,
+        # resolve it to the one canonical Vault entity without inventing a merge.
+        if not candidates and not alias_sources:
+            vault_alias_candidates = {
+                x["relative"]: x
+                for x in vault_entities.get(
+                    (entity_type, normalize_entity_name(name)), []
+                )
+                if normalize_entity_name(x["name"]) != normalize_entity_name(name)
+            }
+            if len(vault_alias_candidates) == 1:
+                entity = next(iter(vault_alias_candidates.values()))
+                resolved.append({
+                    "name": name,
+                    "entity_type": entity_type,
+                    "canonical_name": entity["name"],
+                    "file": entity["relative"],
+                    "resolution_method": "vault_alias",
+                    "db_alias": name,
+                    "alias_sources": ["obsidian_alias"],
+                })
+                continue
+            if len(vault_alias_candidates) > 1:
+                unresolved.append({
+                    "name": name,
+                    "entity_type": entity_type,
+                    "reason": "DB entity matches multiple Obsidian aliases",
+                    "files": sorted(vault_alias_candidates),
+                })
+                continue
         if len(candidates) == 1:
             entity = next(iter(candidates.values()))
             resolved.append({
