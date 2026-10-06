@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import unicodedata
 from datetime import datetime, timezone
@@ -11,6 +12,13 @@ from .obsidian_audit import LEGACY_ENTITY_TYPES, _iter_markdown, _parse_frontmat
 
 ENTITY_ROOT_NAMES = ("20_Entities", "entities")
 SYSTEM_DIRS = {"00_Inbox", "90_Dashboard", ".obsidian", ".nayvadius-backup"}
+PLAN_VERSION = 1
+
+
+def _plan_fingerprint(plan: dict) -> str:
+    payload = {key: value for key, value in plan.items() if key != "fingerprint"}
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _norm(value: str) -> str:
@@ -75,12 +83,16 @@ def build_vault_organization_plan(root: str | Path) -> dict:
         })
 
     status = "FAIL" if errors else ("REVIEW" if review else ("PLANNED" if moves else "CLEAN"))
-    return {
-        "title": "Nayvadius Vault Organization Plan", "status": status, "root": str(root),
+    plan = {
+        "title": "Nayvadius Vault Organization Plan", "plan_version": PLAN_VERSION,
+        "status": status, "root": str(root),
         "moves": moves, "review": review, "skipped": skipped, "errors": errors,
         "summary": {"scanned": len(markdown_files), "auto": len(moves),
                     "review": len(review), "skipped": len(skipped), "error": len(errors)},
+        "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+    plan["fingerprint"] = _plan_fingerprint(plan)
+    return plan
 
 
 def write_vault_organization_plan(plan: dict, path: str | Path) -> None:
@@ -115,6 +127,10 @@ def apply_vault_organization_plan(
 ) -> dict:
     """Apply only AUTO moves from a hash-validated plan, with backups and rollback."""
     root = Path(root)
+    if plan.get("plan_version") != PLAN_VERSION or not isinstance(plan.get("fingerprint"), str):
+        return {"status": "REVIEW", "applied": [], "skipped": [{"reason": "invalid or legacy plan schema"}], "changed": 0}
+    if plan.get("fingerprint") != _plan_fingerprint(plan):
+        return {"status": "REVIEW", "applied": [], "skipped": [{"reason": "plan fingerprint mismatch"}], "changed": 0}
     planned_root = plan.get("root")
     if planned_root and Path(planned_root).resolve() != root.resolve():
         return {
