@@ -104,13 +104,6 @@ def finalize_db_reconciliation_provenance(
             if row is None or str(row[0] or "") != content_hash:
                 conn.rollback()
                 return {"status": "REVIEW", "recorded": 0, "reason": "DB document identity mismatch", "document_id": document_id}
-                conn.rollback()
-                return {
-                    "status": "REVIEW",
-                    "recorded": 0,
-                    "reason": "AUTO entry lacks document_id",
-                    "entry": entry,
-                }
             conn.execute(
                 """INSERT OR IGNORE INTO reconciliation_provenance
                    (document_id, content_hash, old_path, new_path, manifest_path, verified_at)
