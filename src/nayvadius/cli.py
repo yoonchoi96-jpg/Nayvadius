@@ -75,6 +75,16 @@ def main() -> None:
             raise SystemExit(1)
         return
 
+    if args.command == "db-reconcile-result-verify":
+        result_path = Path(args.plan or (str(args.output).rstrip("/") + "/db_reconciliation_result.json"))
+        with result_path.open(encoding="utf-8") as fh:
+            apply_result = json.load(fh)
+        result = verify_db_reconciliation_apply(args.output, apply_result)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if result["status"] == "FAIL":
+            raise SystemExit(1)
+        return
+
     if args.command == "db-reconcile-finalize":
         result_path = Path(args.plan or (str(args.output).rstrip("/") + "/db_reconciliation_result.json"))
         with result_path.open(encoding="utf-8") as fh:
