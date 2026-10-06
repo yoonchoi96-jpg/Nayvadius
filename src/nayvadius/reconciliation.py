@@ -38,7 +38,7 @@ def build_db_reconciliation_plan(
     This is analysis-only. It never mutates the vault or database.
     """
     diff = compare_vault_snapshots(previous, current)
-    db_entities = _db_entity_paths(db_path)
+    db_entities = _db_entity_paths(db_path) if Path(db_path).exists() else {}
     auto, review, skipped = [], [], []
 
     for item in diff["moved"]:
