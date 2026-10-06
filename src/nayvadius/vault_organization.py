@@ -126,6 +126,8 @@ def apply_vault_organization_plan(
     moves = [item for item in plan.get("moves", []) if isinstance(item, dict)]
     skipped = list(plan.get("review", [])) + list(plan.get("skipped", []))
     valid = []
+    planned_sources: set[Path] = set()
+    planned_targets: set[Path] = set()
     for item in moves:
         source = _safe_relative(root, item.get("source", ""))
         target = _safe_relative(root, item.get("target", ""))
@@ -155,6 +157,14 @@ def apply_vault_organization_plan(
         if target.exists():
             skipped.append({"item": item, "reason": "target now exists"})
             continue
+        if source in planned_sources or target in planned_targets:
+            skipped.append({"item": item, "reason": "duplicate source or target in plan"})
+            continue
+        if target in planned_sources or source in planned_targets:
+            skipped.append({"item": item, "reason": "move collision between planned source and target"})
+            continue
+        planned_sources.add(source)
+        planned_targets.add(target)
         valid.append((item, source, target))
 
     if not apply:
