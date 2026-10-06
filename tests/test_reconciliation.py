@@ -497,3 +497,26 @@ def test_db_entity_name_resolves_through_obsidian_alias(tmp_path: Path):
     assert resolution["resolution_method"] == "vault_alias"
     assert resolution["canonical_name"] == "Alice Corporation"
     assert resolution["alias_sources"] == ["obsidian_alias"]
+
+
+def test_ambiguous_obsidian_alias_keeps_reconciliation_in_review(tmp_path: Path):
+    db = tmp_path / "state.db"
+    _db(db, [("doc-1", "Note", _hash("same"), "readwise")])
+    with sqlite3.connect(db) as conn:
+        conn.execute("INSERT INTO document_entities VALUES('doc-1','Acme','Organizations')")
+
+    root = tmp_path / "vault"
+    (root / "entities" / "Organizations").mkdir(parents=True)
+    for name in ("Acme Holdings", "Acme Corp"):
+        (root / "entities" / "Organizations" / f"{name}.md").write_text(
+            f"---\nname: {name}\naliases: [Acme]\n---\n", encoding="utf-8"
+        )
+    (root / "note.md").write_text("[[Acme]]", encoding="utf-8")
+    previous = snapshot_vault(root)
+    (root / "note.md").rename(root / "renamed.md")
+
+    plan = build_db_reconciliation_plan(previous, snapshot_vault(root), db, vault_root=root)
+
+    assert plan["summary"]["auto"] == 0
+    unresolved = plan["review"][0]["entity_resolution"]["unresolved"][0]
+    assert unresolved["reason"] == "DB entity matches multiple Obsidian aliases"
