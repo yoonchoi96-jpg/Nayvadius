@@ -6,7 +6,7 @@ from .db import status, failed_document_ids, merge_entity
 from .qa import audit_database, write_report
 from .adapters import load_abraham_jsonl, load_abel, load_jacques_json
 from .obsidian_audit import (
-    audit_vault, audit_vault_database, maintenance_report, normalize_vault,
+    audit_vault, audit_vault_database, maintenance_report, normalize_vault, snapshot_vault,
     build_entity_merge_plan, write_audit_report, write_merge_plan,
     write_maintenance_report, apply_entity_merge_plan,
 )
@@ -37,7 +37,7 @@ def main() -> None:
         snapshot_path = Path(args.snapshot or (str(args.output).rstrip("/") + "/vault_snapshot.json"))
         plan_path = Path(str(args.output).rstrip("/") + "/db_reconciliation_plan.json")
         if not snapshot_path.exists():
-            current = __import__("nayvadius.obsidian_audit", fromlist=["snapshot_vault"]).snapshot_vault(args.output)
+            current = snapshot_vault(args.output)
             write_vault_snapshot(current, snapshot_path)
             print(json.dumps({
                 "status": "BASELINE_CREATED",
