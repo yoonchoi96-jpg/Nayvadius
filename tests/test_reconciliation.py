@@ -428,3 +428,27 @@ def test_scalar_entity_alias_metadata_resolves_to_canonical(tmp_path: Path):
     resolution = plan["auto"][0]["entity_resolution"]["resolved"][0]
 
     assert resolution["alias_sources"] == ["entities.aliases"]
+
+
+def test_ordinary_internal_wikilink_does_not_block_reconciliation(tmp_path: Path):
+    db = tmp_path / "state.db"
+    _db(db, [("doc-1", "Note", _hash("same"), "readwise")])
+    with sqlite3.connect(db) as conn:
+        conn.execute("INSERT INTO document_entities VALUES('doc-1','Alice','People')")
+
+    root = tmp_path / "vault"
+    (root / "entities" / "People").mkdir(parents=True)
+    (root / "entities" / "People" / "Alice.md").write_text(
+        "---\nname: Alice\n---\n", encoding="utf-8"
+    )
+    (root / "ordinary.md").write_text("ordinary", encoding="utf-8")
+    (root / "note.md").write_text("[[ordinary]]\n[[Alice]]", encoding="utf-8")
+    previous = snapshot_vault(root)
+    (root / "note.md").rename(root / "renamed.md")
+
+    plan = build_db_reconciliation_plan(previous, snapshot_vault(root), db, vault_root=root)
+
+    assert plan["summary"]["auto"] == 1
+    link_check = plan["auto"][0]["wikilink_resolution"]
+    assert link_check["unresolved"] == []
+    assert link_check["non_entity_links"] == ["ordinary"]
