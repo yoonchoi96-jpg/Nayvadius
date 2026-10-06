@@ -224,7 +224,7 @@ def test_conflicting_db_entity_aliases_force_review(tmp_path: Path):
 
     assert plan["summary"]["auto"] == 0
     entity_check = plan["review"][0]["entity_resolution"]
-    assert entity_check["unresolved"][0]["reason"] == "conflicting DB entity_aliases mappings"
+    assert entity_check["unresolved"][0]["reason"] == "conflicting DB entity alias mappings"
     assert entity_check["unresolved"][0]["canonical_names"] == ["Acme Corp", "Acme Holdings"]
 
 
