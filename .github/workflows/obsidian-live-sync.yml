@@ -1,18 +1,9 @@
 name: Nayvadius Live Obsidian Sync
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - src/**
-      - scripts/obsidian_rest_sync.py
-      - data/**
-      - output/**
-      - config/**
-      - pyproject.toml
+  # Deliberately manual-only: normal development must never wait for the Mac runner.
+  # The live sync is invoked only when the Mac/Obsidian instance is available.
   workflow_dispatch:
-  schedule:
-    - cron: '37 3 * * *'
 
 concurrency:
   group: nayvadius-live-obsidian
@@ -41,7 +32,6 @@ jobs:
 
   sync:
     name: Live Obsidian reconciliation
-    needs: validate
     # The live vault exists only on the user's Mac.
     runs-on: [self-hosted, macOS, X64]
     timeout-minutes: 30
