@@ -10,7 +10,10 @@ from .obsidian_audit import (
     build_entity_merge_plan, write_audit_report, write_merge_plan,
     write_maintenance_report, apply_entity_merge_plan,
 )
-from .reconciliation import (\n    build_live_db_reconciliation_plan, write_db_reconciliation_plan, write_vault_snapshot,\n)\nfrom .vault_organization import (
+from .reconciliation import (
+    build_live_db_reconciliation_plan, write_db_reconciliation_plan, write_vault_snapshot,
+)
+from .vault_organization import (
     build_vault_organization_plan, write_vault_organization_plan,
     apply_vault_organization_plan,
 )
@@ -30,7 +33,8 @@ def main() -> None:
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--apply", action="store_true", default=False)
-    parser.add_argument("--max-attempts", type=int, default=5)\n    parser.add_argument("--snapshot", default="")
+    parser.add_argument("--max-attempts", type=int, default=5)
+    parser.add_argument("--snapshot", default="")
     args = parser.parse_args()
 
     if args.command == "db-reconcile-plan":
