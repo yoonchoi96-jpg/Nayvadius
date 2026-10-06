@@ -76,3 +76,20 @@ def test_root_mismatch_fails():
     result = validate_db_reconciliation_plan(plan, root=Path("/another/vault"))
     assert result["status"] == "FAIL"
     assert any("does not match requested root" in error for error in result["errors"])
+
+
+def test_non_hex_hash_fails():
+    plan = _plan(auto=[{"action": "AUTO", "kind": "move", "source": "old.md", "target": "new.md", "hash": "g" * 64}])
+    plan["summary"]["auto"] = 1
+    plan["fingerprint"] = _fingerprint(plan)
+    result = validate_db_reconciliation_plan(plan)
+    assert result["status"] == "FAIL"
+    assert any("SHA-256 hex" in error for error in result["errors"])
+
+def test_protected_path_fails():
+    plan = _plan(auto=[{"action": "AUTO", "kind": "move", "source": ".nayvadius-backup/old.md", "target": "new.md", "hash": "a" * 64}])
+    plan["summary"]["auto"] = 1
+    plan["fingerprint"] = _fingerprint(plan)
+    result = validate_db_reconciliation_plan(plan)
+    assert result["status"] == "FAIL"
+    assert any("protected path" in error for error in result["errors"])
