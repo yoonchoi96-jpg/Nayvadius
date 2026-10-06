@@ -10,7 +10,7 @@ from .obsidian_audit import (
     build_entity_merge_plan, write_audit_report, write_merge_plan,
     write_maintenance_report, apply_entity_merge_plan,
 )
-from .vault_organization import (
+from .reconciliation import (\n    build_live_db_reconciliation_plan, write_db_reconciliation_plan, write_vault_snapshot,\n)\nfrom .vault_organization import (
     build_vault_organization_plan, write_vault_organization_plan,
     apply_vault_organization_plan,
 )
@@ -21,7 +21,7 @@ def main() -> None:
     parser.add_argument("command", choices=[
         "status", "process", "retry-failed", "qa", "obsidian-audit",
         "obsidian-normalize", "entity-merge-plan", "entity-merge-apply",
-        "vault-organization-plan", "vault-organization-apply", "maintenance",
+        "vault-organization-plan", "vault-organization-apply", "db-reconcile-plan", "maintenance",
     ])
     parser.add_argument("--input", default="data/input.jsonl")
     parser.add_argument("--db", default="data/nayvadius.db")
@@ -30,8 +30,30 @@ def main() -> None:
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--apply", action="store_true", default=False)
-    parser.add_argument("--max-attempts", type=int, default=5)
+    parser.add_argument("--max-attempts", type=int, default=5)\n    parser.add_argument("--snapshot", default="")
     args = parser.parse_args()
+
+    if args.command == "db-reconcile-plan":
+        snapshot_path = Path(args.snapshot or (str(args.output).rstrip("/") + "/vault_snapshot.json"))
+        plan_path = Path(str(args.output).rstrip("/") + "/db_reconciliation_plan.json")
+        if not snapshot_path.exists():
+            current = __import__("nayvadius.obsidian_audit", fromlist=["snapshot_vault"]).snapshot_vault(args.output)
+            write_vault_snapshot(current, snapshot_path)
+            print(json.dumps({
+                "status": "BASELINE_CREATED",
+                "snapshot": str(snapshot_path),
+                "message": "No previous snapshot existed; baseline created. Re-run to reconcile changes.",
+            }, ensure_ascii=False, indent=2))
+            return
+        with snapshot_path.open(encoding="utf-8") as fh:
+            previous = json.load(fh)
+        current, plan = build_live_db_reconciliation_plan(previous, args.output, args.db)
+        write_db_reconciliation_plan(plan, plan_path)
+        write_vault_snapshot(current, snapshot_path)
+        print(json.dumps(plan, ensure_ascii=False, indent=2))
+        if plan["status"] == "FAIL":
+            raise SystemExit(1)
+        return
 
     if args.command == "vault-organization-apply":
         plan_path = str(args.output).rstrip("/") + "/vault_organization_plan.json"
