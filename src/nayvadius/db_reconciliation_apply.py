@@ -183,14 +183,14 @@ def verify_db_reconciliation_apply(root: str | Path, result: dict) -> dict:
                 errors.append(f"target hash mismatch: {operation.get('new_path')}")
             checked += 1
         elif kind == "wikilink_rewrite":
-            new_hash = new_hash
+            new_hash = operation.get("new_hash")
             if not isinstance(new_hash, str) or len(new_hash) != 64:
                 errors.append(f"wikilink rewrite has invalid new hash: {operation.get('path')}")
                 continue
             path = _safe_relative(root, operation.get("path", ""))
             if path is None or not path.is_file():
                 errors.append(f"rewritten file is missing: {operation.get('path')}")
-            elif _sha256(path.read_bytes()) != operation.get("new_hash"):
+            elif _sha256(path.read_bytes()) != new_hash:
                 errors.append(f"rewritten file hash mismatch: {operation.get('path')}")
             checked += 1
     return {
