@@ -111,13 +111,15 @@ def finalize_db_reconciliation_provenance(
                 PRIMARY KEY(document_id, content_hash, old_path, new_path)
             )"""
         )
+        recorded = 0
+        already_recorded = 0
         for entry in validated:
             document_id, old_path, new_path, content_hash = entry
             row = conn.execute("SELECT content_hash FROM documents WHERE id = ?", (document_id,)).fetchone()
             if row is None or str(row[0] or "") != content_hash:
                 conn.rollback()
                 return {"status": "REVIEW", "recorded": 0, "reason": "DB document identity mismatch", "document_id": document_id}
-            conn.execute(
+            cursor = conn.execute(
                 """INSERT OR IGNORE INTO reconciliation_provenance
                    (document_id, content_hash, old_path, new_path, manifest_path, verified_at)
                    VALUES (?, ?, ?, ?, ?, ?)""",
@@ -130,8 +132,17 @@ def finalize_db_reconciliation_provenance(
                     now,
                 ),
             )
+            if cursor.rowcount == 1:
+                recorded += 1
+            else:
+                already_recorded += 1
         conn.commit()
-        return {"status": "FINALIZED", "recorded": len(entries), "verified_at": now}
+        return {
+            "status": "FINALIZED",
+            "recorded": recorded,
+            "already_recorded": already_recorded,
+            "verified_at": now,
+        }
     except Exception as exc:
         conn.rollback()
         return {"status": "FAIL", "recorded": 0, "reason": str(exc)}
