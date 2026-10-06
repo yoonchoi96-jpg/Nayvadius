@@ -212,10 +212,10 @@ def test_db_alias_type_mismatch_does_not_resolve(tmp_path: Path):
 
     root = tmp_path / "vault"
     (root / "entities" / "Organizations").mkdir(parents=True)
-    (root / "entities" / "Organizations" / "Apple.md").write_text(
-        "---\nname: Apple\n---\n", encoding="utf-8"
+    (root / "entities" / "Organizations" / "Apple Inc..md").write_text(
+        "---\nname: Apple Inc.\n---\n", encoding="utf-8"
     )
-    (root / "note.md").write_text("[[Apple]]", encoding="utf-8")
+    (root / "note.md").write_text("[[Apple Inc.]]", encoding="utf-8")
     previous = snapshot_vault(root)
     (root / "note.md").rename(root / "renamed.md")
 
