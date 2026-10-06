@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import unicodedata
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .processor import ENTITY_TYPES
@@ -10,7 +11,6 @@ from .obsidian_audit import LEGACY_ENTITY_TYPES, _iter_markdown, _parse_frontmat
 
 ENTITY_ROOT_NAMES = ("20_Entities", "entities")
 SYSTEM_DIRS = {"00_Inbox", "90_Dashboard", ".obsidian", ".nayvadius-backup"}
-LEGACY_DIRS = {"Companies": "Organizations", "Brands": "Organizations", "Company": "Organizations", "Brand": "Organizations"}
 
 
 def _norm(value: str) -> str:
@@ -25,11 +25,7 @@ def _canonical_domain(value: str) -> str | None:
 
 
 def build_vault_organization_plan(root: str | Path) -> dict:
-    """Build a deterministic relocation plan without semantic/LLM classification.
-
-    Only notes already carrying a recognized entity domain in their current path
-    or frontmatter are eligible. Ambiguous/unrecognized notes are REVIEW, never AUTO.
-    """
+    """Build a deterministic relocation plan without semantic/LLM classification."""
     root = Path(root)
     moves, review, skipped, errors = [], [], [], []
     if not root.exists():
@@ -37,15 +33,14 @@ def build_vault_organization_plan(root: str | Path) -> dict:
                 "skipped": [], "errors": [f"vault root does not exist: {root}"],
                 "summary": {"scanned": 0, "auto": 0, "review": 0, "skipped": 0, "error": 1}}
 
-    for path in _iter_markdown(root):
+    markdown_files = _iter_markdown(root)
+    for path in markdown_files:
         rel = path.relative_to(root)
         parts = rel.parts
         if not parts or parts[0] in SYSTEM_DIRS:
             continue
         domain = None
-        source_root = None
         if len(parts) >= 2 and parts[0] in ENTITY_ROOT_NAMES:
-            source_root = parts[0]
             domain = _canonical_domain(parts[1])
         fields, _ = _parse_frontmatter(path.read_text(encoding="utf-8"))
         front_domain = _canonical_domain(fields.get("entity_type") or fields.get("type"))
@@ -74,25 +69,17 @@ def build_vault_organization_plan(root: str | Path) -> dict:
                                "target": target.relative_to(root).as_posix()})
             continue
         moves.append({
-            "action": "AUTO",
-            "source": rel.as_posix(),
+            "action": "AUTO", "source": rel.as_posix(),
             "target": target.relative_to(root).as_posix(),
-            "entity_type": domain,
-            "file_hash": _sha256(path.read_bytes()),
+            "entity_type": domain, "file_hash": _sha256(path.read_bytes()),
         })
 
-    actions = len(moves), len(review), len(skipped)
     status = "FAIL" if errors else ("REVIEW" if review else ("PLANNED" if moves else "CLEAN"))
     return {
-        "title": "Nayvadius Vault Organization Plan",
-        "status": status,
-        "root": str(root),
-        "moves": moves,
-        "review": review,
-        "skipped": skipped,
-        "errors": errors,
-        "summary": {"scanned": len(_iter_markdown(root)), "auto": actions[0],
-                    "review": actions[1], "skipped": actions[2], "error": len(errors)},
+        "title": "Nayvadius Vault Organization Plan", "status": status, "root": str(root),
+        "moves": moves, "review": review, "skipped": skipped, "errors": errors,
+        "summary": {"scanned": len(markdown_files), "auto": len(moves),
+                    "review": len(review), "skipped": len(skipped), "error": len(errors)},
     }
 
 
@@ -114,12 +101,9 @@ def _safe_relative(root: Path, value: str) -> Path | None:
     return resolved
 
 
-def _rewrite_links_for_move(text: str, old_stem: str, new_stem: str) -> tuple[str, list[dict]]:
-    # Reuse the audit module's parser/rewrite machinery while preserving heading/display.
+def _rewrite_links_for_move(text: str, replacements: dict[str, str]) -> tuple[str, list[dict]]:
     from .obsidian_audit import _rewrite_target
-    updated, count, links = _rewrite_target(
-        text, {_norm(old_stem): new_stem}
-    )
+    updated, _, links = _rewrite_target(text, replacements)
     return updated, links
 
 
@@ -152,9 +136,8 @@ def apply_vault_organization_plan(
     if not apply:
         return {
             "status": "PLANNED" if valid else ("REVIEW" if skipped else "CLEAN"),
-            "applied": [], "would_move": [
-                {"source": i["source"], "target": i["target"]} for i, _, _ in valid
-            ],
+            "applied": [], "would_move": [{"source": i["source"], "target": i["target"]}
+                                          for i, _, _ in valid],
             "skipped": skipped, "changed": 0,
         }
 
@@ -166,39 +149,45 @@ def apply_vault_organization_plan(
         for item, source, target in valid:
             backup = backup_root / source.relative_to(root)
             backup.parent.mkdir(parents=True, exist_ok=True)
-            backup.write_bytes(source.read_bytes())
+            data = source.read_bytes()
+            backup.write_bytes(data)
             manifest.append({
                 "operation": "vault_move",
                 "original_path": source.relative_to(root).as_posix(),
                 "new_path": target.relative_to(root).as_posix(),
                 "backup_path": backup.relative_to(root).as_posix(),
-                "original_hash": _sha256(source.read_bytes()),
+                "original_hash": _sha256(data),
             })
 
-        # Rewrite links before moving, so rollback can restore the exact originals.
-        replacements = {
-            _norm(Path(item["source"]).stem): Path(item["target"]).stem
-            for item, _, _ in valid
-        }
+        replacements = {}
+        stems = {}
+        for item, _, _ in valid:
+            source = item["source"].removesuffix(".md")
+            target = item["target"].removesuffix(".md")
+            replacements[_norm(source)] = target
+            stems.setdefault(_norm(Path(item["source"]).stem), []).append(Path(item["target"]).stem)
+        for stem, targets in stems.items():
+            if len(set(targets)) == 1:
+                replacements[stem] = targets[0]
+
+        valid_sources = {source.resolve() for _, source, _ in valid}
         for path in _iter_markdown(root):
-            if any(path.resolve() == source.resolve() for _, source, _ in valid):
+            if path.resolve() in valid_sources:
                 continue
             original = path.read_text(encoding="utf-8")
-            updated, links = _rewrite_links_for_move(original, "", "")
-            # Apply all source->target replacements in one pass through the canonical helper.
-            from .obsidian_audit import _rewrite_target
-            updated, _, links = _rewrite_target(original, replacements)
+            updated, links = _rewrite_links_for_move(original, replacements)
             if updated != original:
                 rewritten[path] = (original, updated, links)
                 backup = backup_root / "rewrites" / path.relative_to(root)
                 backup.parent.mkdir(parents=True, exist_ok=True)
-                backup.write_bytes(original.encode("utf-8"))
+                original_bytes = original.encode("utf-8")
+                backup.write_bytes(original_bytes)
                 manifest.append({
                     "operation": "wikilink_rewrite",
                     "original_path": path.relative_to(root).as_posix(),
                     "new_path": path.relative_to(root).as_posix(),
                     "backup_path": backup.relative_to(root).as_posix(),
-                    "original_hash": _sha256(original.encode("utf-8")),
+                    "original_hash": _sha256(original_bytes),
                     "new_hash": _sha256(updated.encode("utf-8")),
                 })
 
@@ -211,7 +200,8 @@ def apply_vault_organization_plan(
             source.rename(target)
 
         manifest_path = backup_root / "manifest.json"
-        manifest_path.write_text(json.dumps({"operations": manifest}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        manifest_path.write_text(json.dumps({"operations": manifest}, ensure_ascii=False, indent=2) + "\n",
+                                 encoding="utf-8")
         return {
             "status": "APPLIED" if valid else ("REVIEW" if skipped else "CLEAN"),
             "applied": [{"source": i["source"], "target": i["target"]} for i, _, _ in valid],
@@ -224,7 +214,4 @@ def apply_vault_organization_plan(
         for _, source, target in valid:
             if target.exists() and not source.exists():
                 target.rename(source)
-        return {
-            "status": "FAIL", "applied": [], "skipped": skipped,
-            "changed": 0, "error": str(exc),
-        }
+        return {"status": "FAIL", "applied": [], "skipped": skipped, "changed": 0, "error": str(exc)}
