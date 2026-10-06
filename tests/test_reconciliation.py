@@ -473,3 +473,27 @@ def test_path_qualified_entity_wikilink_resolves(tmp_path: Path):
 
     assert plan["summary"]["auto"] == 1
     assert plan["auto"][0]["wikilink_resolution"]["links"][0]["canonical_file"] == "entities/People/Alice.md"
+
+
+def test_db_entity_name_resolves_through_obsidian_alias(tmp_path: Path):
+    db = tmp_path / "state.db"
+    _db(db, [("doc-1", "Note", _hash("same"), "readwise")])
+    with sqlite3.connect(db) as conn:
+        conn.execute("INSERT INTO document_entities VALUES('doc-1','Alice Corp','Organizations')")
+
+    root = tmp_path / "vault"
+    (root / "entities" / "Organizations").mkdir(parents=True)
+    (root / "entities" / "Organizations" / "Alice Corporation.md").write_text(
+        "---\nname: Alice Corporation\naliases: [Alice Corp]\n---\n", encoding="utf-8"
+    )
+    (root / "note.md").write_text("[[Alice Corp]]", encoding="utf-8")
+    previous = snapshot_vault(root)
+    (root / "note.md").rename(root / "renamed.md")
+
+    plan = build_db_reconciliation_plan(previous, snapshot_vault(root), db, vault_root=root)
+
+    assert plan["summary"]["auto"] == 1
+    resolution = plan["auto"][0]["entity_resolution"]["resolved"][0]
+    assert resolution["resolution_method"] == "vault_alias"
+    assert resolution["canonical_name"] == "Alice Corporation"
+    assert resolution["alias_sources"] == ["obsidian_alias"]
