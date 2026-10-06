@@ -22,8 +22,27 @@ permissions:
   contents: write
 
 jobs:
+  validate:
+    name: Cloud validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Nayvadius
+        run: python -m pip install -e .
+      - name: Run tests
+        run: pytest -q
+      - name: Compile source
+        run: python -m compileall src tests scripts
+
   sync:
-    # Must run on the Mac that has the user's live Obsidian instance.
+    name: Live Obsidian reconciliation
+    needs: validate
+    # The live vault exists only on the user's Mac.
     runs-on: [self-hosted, macOS, X64]
     timeout-minutes: 30
     steps:
