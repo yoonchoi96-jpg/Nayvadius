@@ -25,6 +25,9 @@ def _db_identity_index(db_path: str | Path) -> dict:
         entities = db.execute(
             "SELECT entity_name, entity_type, document_id FROM document_entities"
         ).fetchall()
+        aliases = db.execute(
+            "SELECT alias, canonical_name, entity_type FROM entity_aliases"
+        ).fetchall()
 
     by_hash = {}
     by_id = {}
@@ -44,10 +47,19 @@ def _db_identity_index(db_path: str | Path) -> dict:
     for record in by_id.values():
         record["entities"].sort()
 
+    alias_index = {}
+    for alias, canonical_name, entity_type in aliases:
+        key = (entity_type, normalize_entity_name(alias))
+        alias_index.setdefault(key, set()).add(canonical_name)
+
     return {
         "by_hash": by_hash,
         "document_count": len(documents),
         "entity_links": len(entities),
+        "aliases": {
+            key: sorted(values)
+            for key, values in alias_index.items()
+        },
     }
 
 
@@ -61,17 +73,88 @@ def _vault_entity_index(root):
     return index
 
 
-def _resolve_db_entities(db_entities, vault_entities):
+def _resolve_db_entities(db_entities, vault_entities, db_aliases=None):
+    """Resolve DB entity references to one canonical Obsidian entity file.
+
+    Resolution is intentionally conservative:
+    exact canonical/Obsidian alias matches are preferred; an explicit DB
+    entity_aliases mapping is then followed to the canonical DB name. Any
+    missing, conflicting, or type-mismatched mapping remains REVIEW.
+    """
+    db_aliases = db_aliases or {}
     resolved, unresolved = [], []
+
     for name, entity_type in db_entities:
-        candidates = {x["relative"]: x for x in vault_entities.get((entity_type, normalize_entity_name(name)), [])}
+        direct = {
+            x["relative"]: x
+            for x in vault_entities.get((entity_type, normalize_entity_name(name)), [])
+        }
+        if len(direct) == 1:
+            entity = next(iter(direct.values()))
+            resolved.append({
+                "name": name,
+                "entity_type": entity_type,
+                "canonical_name": entity["name"],
+                "file": entity["relative"],
+                "resolution_method": "direct",
+            })
+            continue
+        if len(direct) > 1:
+            unresolved.append({
+                "name": name,
+                "entity_type": entity_type,
+                "reason": "multiple canonical Obsidian entity files match",
+                "files": sorted(direct),
+            })
+            continue
+
+        alias_targets = db_aliases.get((entity_type, normalize_entity_name(name)), [])
+        if len(alias_targets) != 1:
+            unresolved.append({
+                "name": name,
+                "entity_type": entity_type,
+                "reason": (
+                    "conflicting DB entity_aliases mappings"
+                    if len(alias_targets) > 1
+                    else "no canonical Obsidian entity file or DB alias match"
+                ),
+                **({"canonical_names": sorted(alias_targets)} if alias_targets else {}),
+            })
+            continue
+
+        canonical_name = alias_targets[0]
+        candidates = {
+            x["relative"]: x
+            for x in vault_entities.get(
+                (entity_type, normalize_entity_name(canonical_name)), []
+            )
+        }
         if len(candidates) == 1:
             entity = next(iter(candidates.values()))
-            resolved.append({"name": name, "entity_type": entity_type, "canonical_name": entity["name"], "file": entity["relative"]})
-        elif not candidates:
-            unresolved.append({"name": name, "entity_type": entity_type, "reason": "no canonical Obsidian entity file or alias match"})
+            resolved.append({
+                "name": name,
+                "entity_type": entity_type,
+                "canonical_name": entity["name"],
+                "file": entity["relative"],
+                "resolution_method": "db_alias",
+                "db_alias": name,
+            })
+        elif len(candidates) > 1:
+            unresolved.append({
+                "name": name,
+                "entity_type": entity_type,
+                "reason": "DB alias resolves to multiple canonical Obsidian entity files",
+                "canonical_name": canonical_name,
+                "files": sorted(candidates),
+            })
         else:
-            unresolved.append({"name": name, "entity_type": entity_type, "reason": "multiple canonical Obsidian entity files match", "files": sorted(candidates)})
+            unresolved.append({
+                "name": name,
+                "entity_type": entity_type,
+                "reason": "DB alias resolves to a canonical name absent from Obsidian",
+                "canonical_name": canonical_name,
+            })
+
     return {"resolved": resolved, "unresolved": unresolved}
 
 
@@ -130,7 +213,15 @@ def build_db_reconciliation_plan(previous: dict, current: dict, db_path: str | P
         matches = _hash_matches(db_index, item["hash"])
         base = {"kind": "move", "source": item["from"], "target": item["to"], "hash": item["hash"]}
         if len(matches) == 1:
-            entity_check = _resolve_db_entities(matches[0]["entities"], vault_entities) if vault_root else {"resolved": [], "unresolved": []}
+            entity_check = (
+                _resolve_db_entities(
+                    matches[0]["entities"],
+                    vault_entities,
+                    db_index["aliases"],
+                )
+                if vault_root
+                else {"resolved": [], "unresolved": []}
+            )
             link_check = _wikilink_resolution(vault_root, item["to"], vault_entities) if vault_root else {"status": "unavailable", "links": [], "unresolved": []}
             details = {"entity_resolution": entity_check, "wikilink_resolution": link_check}
             if vault_root and (entity_check["unresolved"] or link_check["unresolved"]):
