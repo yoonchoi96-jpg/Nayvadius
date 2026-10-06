@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
+
 
 from .reconciliation import _fingerprint
 
 
 EXPECTED_PLAN_VERSION = 3
+SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+PROTECTED_ROOTS = {"00_Inbox", "90_Dashboard", ".obsidian", ".nayvadius-backup"}
+ENTITY_DOMAINS = {"People", "Organizations", "Countries", "Places", "Products", "Technologies", "Concepts", "Events", "Institutions", "MusicTracks", "MusicAlbums"}
 REQUIRED_TOP_LEVEL = {
     "title",
     "plan_version",
@@ -42,6 +47,9 @@ def validate_db_reconciliation_plan(plan: dict, root: str | Path | None = None) 
     if plan.get("plan_version") != EXPECTED_PLAN_VERSION:
         errors.append(f"unsupported plan_version: {plan.get('plan_version')!r}")
 
+    if plan.get("status") not in {"PLANNED", "REVIEW", "CLEAN"}:
+        errors.append(f"unsupported plan status: {plan.get('status')!r}")
+
     if "fingerprint" in plan:
         try:
             expected = _fingerprint(plan)
@@ -68,8 +76,23 @@ def validate_db_reconciliation_plan(plan: dict, root: str | Path | None = None) 
                 errors.append(f"auto[{index}] missing {key}")
         if item.get("source") == item.get("target"):
             errors.append(f"auto[{index}] source and target are identical")
-        if not isinstance(item.get("hash"), str) or len(item.get("hash", "")) != 64:
+        expected_hash = item.get("hash")
+        if not isinstance(expected_hash, str) or not SHA256_RE.fullmatch(expected_hash):
             errors.append(f"auto[{index}] hash is not a SHA-256 hex string")
+
+        for label, value in (("source", item.get("source")), ("target", item.get("target"))):
+            if isinstance(value, str):
+                path = Path(value)
+                if path.is_absolute() or not value or ".." in path.parts:
+                    errors.append(f"auto[{index}] {label} is not a safe relative path")
+                elif any(part in PROTECTED_ROOTS for part in path.parts):
+                    errors.append(f"auto[{index}] {label} targets a protected path")
+        target = item.get("target")
+        if isinstance(target, str):
+            parts = Path(target).parts
+            if len(parts) < 3 or parts[0] != "20_Entities" or parts[1] not in ENTITY_DOMAINS or Path(target).suffix.lower() != ".md":
+                errors.append(f"auto[{index}] target is not a canonical entity path")
+
         entity_resolution = item.get("entity_resolution")
         if entity_resolution is not None:
             if entity_resolution.get("unresolved"):
