@@ -117,9 +117,20 @@ def apply_db_reconciliation_plan(root: str | Path, plan: dict, backup_dir: str =
         ], "skipped": skipped, "changed": len(candidates) + len(rewritten),
         "backup_manifest": manifest_path.relative_to(root).as_posix(), "validation": validation}
     except Exception as exc:
-        for path, original in rewritten.items():
-            path.write_text(original, encoding="utf-8")
-        for _, source, target in candidates:
-            if target.exists() and not source.exists():
-                target.rename(source)
-        return {"status": "FAIL", "applied": [], "skipped": skipped, "changed": 0, "error": str(exc), "validation": validation}
+        rollback_errors = []
+        for path, original in reversed(list(rewritten.items())):
+            try:
+                path.write_text(original, encoding="utf-8")
+            except Exception as rollback_exc:
+                rollback_errors.append(f"rewrite rollback failed for {path}: {rollback_exc}")
+        for source, target in reversed(moved):
+            try:
+                if target.exists() and not source.exists():
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.rename(source)
+            except Exception as rollback_exc:
+                rollback_errors.append(f"move rollback failed for {target}: {rollback_exc}")
+        return {"status": "FAIL", "applied": [], "skipped": skipped, "changed": 0,
+                "error": str(exc),
+                "rollback": {"status": "FAILED" if rollback_errors else "RESTORED", "errors": rollback_errors},
+                "validation": validation}
