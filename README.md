@@ -208,13 +208,16 @@ aliases, and relation endpoints with the SQLite database.
 
 ## DB ↔ Vault reconciliation
 
-The deterministic reconciliation planner cross-checks Obsidian vault changes against Nayvadius document identity using the vault SHA-256 and `documents.content_hash`. Exact content-preserving moves become `AUTO` only when exactly one DB document matches; ambiguous, unmatched, added, deleted, and modified notes remain `REVIEW` with DB provenance details attached.
+The deterministic reconciliation planner cross-checks Obsidian vault changes against Nayvadius document identity using the vault SHA-256 and `documents.content_hash`. Exact content-preserving moves become `AUTO` only when exactly one DB document matches **and**, when a live vault is supplied, the referenced entities and wikilinks resolve deterministically to the canonical Obsidian graph. Ambiguous, unmatched, added, deleted, and modified notes remain `REVIEW` with DB provenance details attached.
+
+DB entity resolution records whether a reference was resolved directly, through an Obsidian alias, or through DB alias metadata. Ordinary non-entity Obsidian links do not block reconciliation; ambiguous entity links do. Alias provenance is retained so a future mutating consumer can distinguish canonical identity from alias-based evidence.
 
 ```bash
 python -m nayvadius.cli db-reconcile-plan --output /path/to/vault --db data/nayvadius.db
+python -m nayvadius.cli db-reconcile-verify --output /path/to/vault
 ```
 
-On first run, this creates `vault_snapshot.json` as a baseline. Subsequent runs compare the live vault against that snapshot and write `db_reconciliation_plan.json`. The command is analysis-only: it never mutates the vault or database. The snapshot is updated only after the reconciliation plan is produced.
+On first run, this creates `vault_snapshot.json` as a baseline. Subsequent runs compare the live vault against that snapshot and write `db_reconciliation_plan.json`. Both commands are analysis-only: they never mutate the vault or database. The verification command rejects stale/tampered plans, malformed `AUTO` entries, unresolved graph evidence, and root mismatches. A future apply engine must verify the plan immediately before mutation rather than trusting a previously generated JSON file.
 
 ## Live Obsidian bridge
 
