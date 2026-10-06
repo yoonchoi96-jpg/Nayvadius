@@ -78,6 +78,8 @@ def main() -> None:
         with plan_path.open(encoding="utf-8") as fh:
             plan = json.load(fh)
         result = apply_db_reconciliation_plan(args.output, plan, apply=args.apply)
+        result_path = Path(str(args.output).rstrip("/") + "/db_reconciliation_result.json")
+        result_path.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(json.dumps(result, ensure_ascii=False, indent=2))
         if result.get("status") == "FAIL":
             raise SystemExit(1)
