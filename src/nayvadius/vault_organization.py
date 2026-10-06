@@ -158,7 +158,7 @@ def apply_vault_organization_plan(
             "skipped": skipped, "changed": 0,
         }
 
-    operation = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    operation = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     backup_root = root / backup_dir / "vault-organization" / operation
     manifest = []
     rewritten = {}
