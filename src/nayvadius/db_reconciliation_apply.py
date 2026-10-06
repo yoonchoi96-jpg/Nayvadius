@@ -65,6 +65,7 @@ def apply_db_reconciliation_plan(root: str | Path, plan: dict, backup_dir: str =
     backup_root = root / backup_dir / "db-reconciliation" / operation
     manifest = []
     rewritten = {}
+    moved = []
     try:
         from .vault_organization import _rewrite_links_for_move
         replacements, stems = {}, {}
@@ -106,6 +107,7 @@ def apply_db_reconciliation_plan(root: str | Path, plan: dict, backup_dir: str =
         for _, source, target in candidates:
             target.parent.mkdir(parents=True, exist_ok=True)
             source.rename(target)
+            moved.append((source, target))
 
         manifest_path = backup_root / "manifest.json"
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
