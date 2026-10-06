@@ -64,7 +64,7 @@ def test_finalizer_records_only_verified_apply(tmp_path: Path):
         "SELECT document_id,old_path,new_path,content_hash FROM reconciliation_provenance"
     ).fetchone()
     conn.close()
-    assert row == ("doc-1", "old.md", "new.md", "b" * 64)
+    assert row == ("doc-1", "old.md", "new.md", _hash("same"))
 
 
 def test_finalizer_rejects_db_identity_mismatch_without_provenance(tmp_path: Path):
@@ -147,6 +147,7 @@ def test_finalizer_is_idempotent(tmp_path: Path):
             "hash": _hash("same"),
         }],
     }
+    (tmp_path / "new.md").write_text("same", encoding="utf-8")
     verification = {"status": "VERIFIED"}
 
     first = finalize_db_reconciliation_provenance(
@@ -208,16 +209,16 @@ def test_finalizer_is_transactional_across_multiple_entries(tmp_path: Path):
     manifest = tmp_path / "manifest.json"
     manifest.write_text(json.dumps({"operations": [
         {"operation": "move", "original_path": "old1.md", "new_path": "new1.md", "original_hash": _hash("same")},
-        {"operation": "move", "original_path": "old2.md", "new_path": "new2.md", "original_hash": "f" * 64},
+        {"operation": "move", "original_path": "old2.md", "new_path": "new2.md", "original_hash": _hash("same")},
     ]}))
     (tmp_path / "new1.md").write_text("same", encoding="utf-8")
-    (tmp_path / "new2.md").write_text("f", encoding="utf-8")
+    (tmp_path / "new2.md").write_text("same", encoding="utf-8")
     apply_result = {
         "status": "APPLIED",
         "backup_manifest": "manifest.json",
         "applied": [
             {"document_id": "doc-1", "source": "old1.md", "target": "new1.md", "hash": _hash("same")},
-            {"document_id": "doc-2", "source": "old2.md", "target": "new2.md", "hash": "f" * 64},
+            {"document_id": "doc-2", "source": "old2.md", "target": "new2.md", "hash": _hash("same")},
         ],
     }
 
