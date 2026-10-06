@@ -358,3 +358,26 @@ def test_conflicting_alias_sources_force_review(tmp_path: Path):
     entity_check = plan["review"][0]["entity_resolution"]
     assert entity_check["unresolved"][0]["reason"] == "conflicting DB entity alias mappings"
     assert entity_check["unresolved"][0]["canonical_names"] == ["Acme Corp", "Acme Holdings"]
+
+
+def test_legacy_db_without_entities_table_remains_reconcilable(tmp_path: Path):
+    db = tmp_path / "legacy.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE documents(id TEXT, title TEXT, content_hash TEXT, source TEXT)")
+        conn.execute("CREATE TABLE document_entities(document_id TEXT, entity_name TEXT, entity_type TEXT)")
+        conn.execute("CREATE TABLE entity_aliases(alias TEXT NOT NULL, canonical_name TEXT NOT NULL, entity_type TEXT NOT NULL)")
+        conn.execute(
+            "INSERT INTO documents VALUES('doc-1','Note',?, 'readwise')",
+            (_hash("same"),),
+        )
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "old.md").write_text("same", encoding="utf-8")
+    previous = snapshot_vault(root)
+    (root / "old.md").rename(root / "new.md")
+
+    plan = build_db_reconciliation_plan(previous, snapshot_vault(root), db)
+
+    assert plan["summary"]["auto"] == 1
+    assert plan["db_summary"]["entity_metadata_aliases"] == 0
