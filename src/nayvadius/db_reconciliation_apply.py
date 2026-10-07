@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import re
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -151,15 +153,45 @@ def verify_db_reconciliation_apply(root: str | Path, result: dict) -> dict:
         return {"status": "FAIL", "errors": ["backup manifest is missing"], "checked": 0}
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        operations = manifest.get("operations", [])
     except (OSError, ValueError, TypeError) as exc:
         return {"status": "FAIL", "errors": [f"invalid backup manifest: {exc}"], "checked": 0}
-
+    if not isinstance(manifest, dict):
+        return {"status": "FAIL", "errors": ["backup manifest must be an object"], "checked": 0, "manifest": manifest_rel}
+    operations = manifest.get("operations")
     errors = []
     checked = 0
     if not isinstance(operations, list):
         return {"status": "FAIL", "errors": ["backup manifest operations must be a list"], "checked": 0, "manifest": manifest_rel}
+    if not operations:
+        return {"status": "FAIL", "errors": ["backup manifest contains no operations"], "checked": 0, "manifest": manifest_rel}
 
+    move_keys = []
+    for operation in operations:
+        if not isinstance(operation, dict):
+            errors.append("manifest contains a non-object operation")
+            continue
+        kind = operation.get("operation")
+        if kind == "move":
+            move_keys.append((operation.get("original_path"), operation.get("new_path"), operation.get("original_hash")))
+        elif kind == "wikilink_rewrite":
+            continue
+        else:
+            errors.append(f"manifest contains unsupported operation: {kind!r}")
+
+    applied = result.get("applied")
+    if not isinstance(applied, list):
+        errors.append("apply result applied must be a list")
+    elif not applied:
+        errors.append("APPLIED result contains no applied entries")
+    else:
+        applied_keys = []
+        for entry in applied:
+            if not isinstance(entry, dict):
+                errors.append("apply result contains a non-object applied entry")
+                continue
+            applied_keys.append((entry.get("source"), entry.get("target"), entry.get("hash")))
+        if Counter(applied_keys) != Counter(move_keys):
+            errors.append("apply result applied entries do not match manifest move operations")
     for operation in operations:
         if not isinstance(operation, dict):
             errors.append("manifest contains a non-object operation")
@@ -169,7 +201,7 @@ def verify_db_reconciliation_apply(root: str | Path, result: dict) -> dict:
             source = _safe_relative(root, operation.get("original_path", ""))
             target = _safe_relative(root, operation.get("new_path", ""))
             original_hash = operation.get("original_hash")
-            if not isinstance(original_hash, str) or len(original_hash) != 64:
+            if not isinstance(original_hash, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", original_hash):
                 errors.append(f"move has invalid original hash: {operation.get('original_path')}")
                 continue
             if source is None or target is None:
@@ -184,7 +216,7 @@ def verify_db_reconciliation_apply(root: str | Path, result: dict) -> dict:
             checked += 1
         elif kind == "wikilink_rewrite":
             new_hash = operation.get("new_hash")
-            if not isinstance(new_hash, str) or len(new_hash) != 64:
+            if not isinstance(new_hash, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", new_hash):
                 errors.append(f"wikilink rewrite has invalid new hash: {operation.get('path')}")
                 continue
             path = _safe_relative(root, operation.get("path", ""))
