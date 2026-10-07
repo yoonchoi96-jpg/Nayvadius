@@ -147,10 +147,31 @@ def validate_db_reconciliation_plan(plan: dict, root: str | Path | None = None) 
             errors.append("summary.skipped does not match skipped length")
 
     if "diff" in plan and isinstance(plan.get("diff"), dict):
-        diff_summary = plan["diff"].get("summary")
-        if isinstance(diff_summary, dict) and "changed" in diff_summary:
-            if summary.get("changed") != diff_summary.get("changed"):
-                errors.append("summary.changed does not match diff.summary.changed")
+        diff = plan["diff"]
+        diff_summary = diff.get("summary")
+        if isinstance(diff_summary, dict):
+            if "changed" in diff_summary:
+                if summary.get("changed") != diff_summary.get("changed"):
+                    errors.append("summary.changed does not match diff.summary.changed")
+
+            diff_keys = ("added", "deleted", "modified", "moved")
+            diff_counts = {}
+            for key in diff_keys:
+                values = diff.get(key)
+                if not isinstance(values, list):
+                    errors.append(f"diff.{key} must be a list")
+                else:
+                    diff_counts[key] = len(values)
+
+            if all(key in diff_counts for key in diff_keys):
+                calculated_changed = sum(diff_counts.values())
+                if diff_summary.get("changed") != calculated_changed:
+                    errors.append("diff.summary.changed does not match diff item counts")
+                for key in diff_keys:
+                    if diff_summary.get(key) != diff_counts[key]:
+                        errors.append(f"diff.summary.{key} does not match diff.{key} length")
+        else:
+            errors.append("diff.summary must be an object")
 
     auto_count = len(plan.get("auto", []))
     review_count = len(plan.get("review", []))
