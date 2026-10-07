@@ -16,9 +16,15 @@ def _safe_relative(root: Path, value: str) -> Path | None:
     candidate = Path(value)
     if candidate.is_absolute() or not value or ".." in candidate.parts:
         return None
-    resolved = (root / candidate).resolve()
+    root_resolved = root.resolve()
+    current = root_resolved
+    for part in candidate.parts:
+        current = current / part
+        if current.is_symlink():
+            return None
+    resolved = current.resolve()
     try:
-        resolved.relative_to(root.resolve())
+        resolved.relative_to(root_resolved)
     except ValueError:
         return None
     return resolved
@@ -237,8 +243,20 @@ def verify_db_reconciliation_apply(root: str | Path, result: dict) -> dict:
             move_keys.append((original_path, new_path, original_hash))
         elif kind == "wikilink_rewrite":
             path = operation.get("path")
+            original_hash = operation.get("original_hash")
+            new_hash = operation.get("new_hash")
+            backup_path = operation.get("backup_path")
             if not isinstance(path, str):
                 errors.append("manifest wikilink rewrite contains invalid path type")
+                continue
+            if not isinstance(original_hash, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", original_hash):
+                errors.append("manifest wikilink rewrite contains invalid original hash")
+                continue
+            if not isinstance(new_hash, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", new_hash):
+                errors.append("manifest wikilink rewrite contains invalid new hash")
+                continue
+            if not isinstance(backup_path, str):
+                errors.append("manifest wikilink rewrite contains invalid backup path")
                 continue
             rewrite_keys.append(path)
         else:
@@ -296,14 +314,27 @@ def verify_db_reconciliation_apply(root: str | Path, result: dict) -> dict:
             checked += 1
         elif kind == "wikilink_rewrite":
             new_hash = operation.get("new_hash")
-            if not isinstance(new_hash, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", new_hash):
-                errors.append(f"wikilink rewrite has invalid new hash: {operation.get('path')}")
-                continue
+            original_hash = operation.get("original_hash")
+            backup_path = operation.get("backup_path")
             path = _safe_relative(root, operation.get("path", ""))
+            backup = _safe_relative(root, backup_path or "")
+            if (
+                not isinstance(new_hash, str)
+                or not re.fullmatch(r"[0-9a-fA-F]{64}", new_hash)
+                or not isinstance(original_hash, str)
+                or not re.fullmatch(r"[0-9a-fA-F]{64}", original_hash)
+                or backup is None
+                or _contains_symlink(root, backup)
+                or not backup.is_file()
+            ):
+                errors.append(f"wikilink rewrite has invalid or missing backup metadata: {operation.get('path')}")
+                continue
             if path is None or _contains_symlink(root, path) or not path.is_file():
                 errors.append(f"rewritten file is missing: {operation.get('path')}")
             elif _sha256(path.read_bytes()) != new_hash:
                 errors.append(f"rewritten file hash mismatch: {operation.get('path')}")
+            if _sha256(backup.read_bytes()) != original_hash:
+                errors.append(f"rewritten backup hash mismatch: {operation.get('path')}")
             checked += 1
     return {
         "status": "VERIFIED" if not errors else "FAIL",
