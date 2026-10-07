@@ -20,16 +20,17 @@ def _safe_relative(root: Path, value: str) -> Path | None:
     candidate = Path(value)
     if candidate.is_absolute() or not value or ".." in candidate.parts:
         return None
-    resolved = (root / candidate).resolve()
-    try:
-        resolved.relative_to(root.resolve())
-    except ValueError:
-        return None
-    current = root.resolve()
+    root_resolved = root.resolve()
+    current = root_resolved
     for part in candidate.parts:
         current = current / part
         if current.is_symlink():
             return None
+    resolved = current.resolve()
+    try:
+        resolved.relative_to(root_resolved)
+    except ValueError:
+        return None
     return resolved
 
 
