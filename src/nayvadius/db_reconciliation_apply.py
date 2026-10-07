@@ -266,6 +266,9 @@ def verify_db_reconciliation_apply(root: str | Path, result: dict) -> dict:
             if not isinstance(source, str) or not isinstance(target, str) or not isinstance(entry_hash, str):
                 errors.append("apply result contains invalid applied entry fields")
                 continue
+            if not re.fullmatch(r"[0-9a-fA-F]{64}", entry_hash):
+                errors.append("apply result contains invalid applied entry hash")
+                continue
             applied_keys.append((source, target, entry_hash))
         if Counter(applied_keys) != Counter(move_keys):
             errors.append("apply result applied entries do not match manifest move operations")
