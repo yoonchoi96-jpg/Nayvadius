@@ -24,6 +24,20 @@ def _safe_relative(root: Path, value: str) -> Path | None:
     return resolved
 
 
+def _contains_symlink(root: Path, path: Path) -> bool:
+    """Reject symlink path components that could redirect a mutation."""
+    try:
+        relative = path.relative_to(root.resolve())
+    except ValueError:
+        return True
+    current = root.resolve()
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            return True
+    return False
+
+
 def apply_db_reconciliation_plan(root: str | Path, plan: dict, backup_dir: str = ".nayvadius-backup", apply: bool = False) -> dict:
     root = Path(root)
     backup_candidate = Path(backup_dir)
@@ -31,6 +45,9 @@ def apply_db_reconciliation_plan(root: str | Path, plan: dict, backup_dir: str =
         return {"status": "REVIEW", "applied": [], "skipped": [], "changed": 0,
                 "reason": "backup directory is not a safe relative path"}
     backup_resolved = (root / backup_candidate).resolve()
+    if _contains_symlink(root, root / backup_candidate):
+        return {"status": "REVIEW", "applied": [], "skipped": [], "changed": 0,
+                "reason": "backup directory contains a symlink"}
     try:
         backup_resolved.relative_to(root.resolve())
     except ValueError:
@@ -53,8 +70,8 @@ def apply_db_reconciliation_plan(root: str | Path, plan: dict, backup_dir: str =
             skipped.append({"item": item, "reason": "source is a symlink"}); continue
         if len(expected) != 64 or _sha256(source.read_bytes()) != expected:
             skipped.append({"item": item, "reason": "source changed since reconciliation plan"}); continue
-        if target.exists():
-            skipped.append({"item": item, "reason": "target now exists"}); continue
+        if target.exists() or target.is_symlink():
+            skipped.append({"item": item, "reason": "target now exists or is a symlink"}); continue
         if target.suffix.lower() != ".md":
             skipped.append({"item": item, "reason": "target is not markdown"}); continue
         candidates.append((item, source, target))
