@@ -294,11 +294,18 @@ def _match_details(matches: list[dict]) -> dict:
 def build_db_reconciliation_plan(previous: dict, current: dict, db_path: str | Path, vault_root: str | Path | None = None) -> dict:
     """Cross-check vault changes against deterministic DB document identity."""
     diff = compare_vault_snapshots(previous, current)
-    db_available = bool(db_path) and Path(db_path).exists()
+    db_file = Path(db_path) if db_path else None
+    db_available = bool(db_file) and db_file.is_file()
     db_index = (
-        _db_identity_index(db_path)
+        _db_identity_index(db_file)
         if db_available
-        else {"by_hash": {}, "document_count": 0, "entity_links": 0}
+        else {
+            "by_hash": {},
+            "document_count": 0,
+            "entity_links": 0,
+            "aliases": {},
+            "entity_aliases": {},
+        }
     )
     auto, review, skipped = [], [], []
     vault_entities = _vault_entity_index(vault_root) if vault_root else {}
