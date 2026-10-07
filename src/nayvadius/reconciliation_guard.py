@@ -146,6 +146,21 @@ def validate_db_reconciliation_plan(plan: dict, root: str | Path | None = None) 
         if summary.get("skipped") != len(plan.get("skipped", [])):
             errors.append("summary.skipped does not match skipped length")
 
+    if "diff" in plan and isinstance(plan.get("diff"), dict):
+        diff_summary = plan["diff"].get("summary")
+        if isinstance(diff_summary, dict) and "changed" in diff_summary:
+            if summary.get("changed") != diff_summary.get("changed"):
+                errors.append("summary.changed does not match diff.summary.changed")
+
+    auto_count = len(plan.get("auto", []))
+    review_count = len(plan.get("review", []))
+    if plan.get("status") == "CLEAN" and (auto_count or review_count):
+        errors.append("CLEAN plan cannot contain AUTO or REVIEW entries")
+    if plan.get("status") == "PLANNED" and auto_count == 0:
+        errors.append("PLANNED plan must contain at least one AUTO entry")
+    if plan.get("status") == "REVIEW" and review_count == 0:
+        errors.append("REVIEW plan must contain at least one REVIEW entry")
+
     if root is not None:
         actual = Path(root).resolve()
         for key in ("previous_root", "current_root"):
