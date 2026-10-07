@@ -11,6 +11,8 @@ from .reconciliation_guard import validate_db_reconciliation_plan
 
 
 def _safe_relative(root: Path, value: str) -> Path | None:
+    if not isinstance(value, str):
+        return None
     candidate = Path(value)
     if candidate.is_absolute() or not value or ".." in candidate.parts:
         return None
@@ -24,6 +26,16 @@ def _safe_relative(root: Path, value: str) -> Path | None:
 
 def apply_db_reconciliation_plan(root: str | Path, plan: dict, backup_dir: str = ".nayvadius-backup", apply: bool = False) -> dict:
     root = Path(root)
+    backup_candidate = Path(backup_dir)
+    if backup_candidate.is_absolute() or not backup_dir or ".." in backup_candidate.parts:
+        return {"status": "REVIEW", "applied": [], "skipped": [], "changed": 0,
+                "reason": "backup directory is not a safe relative path"}
+    backup_resolved = (root / backup_candidate).resolve()
+    try:
+        backup_resolved.relative_to(root.resolve())
+    except ValueError:
+        return {"status": "REVIEW", "applied": [], "skipped": [], "changed": 0,
+                "reason": "backup directory escapes vault root"}
     validation = validate_db_reconciliation_plan(plan, root=root)
     if validation["status"] == "FAIL":
         return {"status": "REVIEW", "applied": [], "skipped": [], "changed": 0, "validation": validation}
@@ -37,6 +49,8 @@ def apply_db_reconciliation_plan(root: str | Path, plan: dict, backup_dir: str =
             skipped.append({"item": item, "reason": "invalid source or target"}); continue
         if not source.is_file():
             skipped.append({"item": item, "reason": "source is missing"}); continue
+        if source.is_symlink():
+            skipped.append({"item": item, "reason": "source is a symlink"}); continue
         if len(expected) != 64 or _sha256(source.read_bytes()) != expected:
             skipped.append({"item": item, "reason": "source changed since reconciliation plan"}); continue
         if target.exists():
@@ -83,10 +97,13 @@ def apply_db_reconciliation_plan(root: str | Path, plan: dict, backup_dir: str =
             backup = backup_root / source.relative_to(root)
             backup.parent.mkdir(parents=True, exist_ok=True)
             data = source.read_bytes()
+            actual_hash = _sha256(data)
+            if actual_hash != item["hash"]:
+                raise RuntimeError(f"source changed during apply: {item['source']}")
             backup.write_bytes(data)
             manifest.append({"operation": "move", "original_path": source.relative_to(root).as_posix(),
                              "new_path": target.relative_to(root).as_posix(), "backup_path": backup.relative_to(root).as_posix(),
-                             "original_hash": _sha256(data)})
+                             "original_hash": actual_hash})
 
         for path in _iter_markdown(root):
             if path.resolve() in source_paths:
