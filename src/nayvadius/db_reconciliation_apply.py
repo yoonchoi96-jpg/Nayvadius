@@ -143,7 +143,13 @@ def apply_db_reconciliation_plan(root: str | Path, plan: dict, backup_dir: str =
                 temp.replace(path)
 
         for _, source, target in candidates:
+            if _contains_symlink(root, source) or _contains_symlink(root, target):
+                raise RuntimeError("source or target path contains a symlink during rename")
+            if target.exists() or target.is_symlink():
+                raise RuntimeError(f"target appeared during apply: {target.relative_to(root)}")
             target.parent.mkdir(parents=True, exist_ok=True)
+            if _contains_symlink(root, target.parent):
+                raise RuntimeError("target parent contains a symlink during apply")
             source.rename(target)
             moved.append((source, target))
 
