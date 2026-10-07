@@ -25,6 +25,11 @@ def _safe_relative(root: Path, value: str) -> Path | None:
         resolved.relative_to(root.resolve())
     except ValueError:
         return None
+    current = root.resolve()
+    for part in candidate.parts:
+        current = current / part
+        if current.is_symlink():
+            return None
     return resolved
 
 
