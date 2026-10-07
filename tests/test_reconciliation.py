@@ -520,3 +520,21 @@ def test_ambiguous_obsidian_alias_keeps_reconciliation_in_review(tmp_path: Path)
     assert plan["summary"]["auto"] == 0
     unresolved = plan["review"][0]["entity_resolution"]["unresolved"][0]
     assert unresolved["reason"] == "DB entity matches multiple Obsidian aliases"
+
+
+
+def test_inaccessible_or_corrupt_db_keeps_changes_in_review(tmp_path: Path):
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "old.md").write_text("same", encoding="utf-8")
+    previous = snapshot_vault(root)
+    (root / "old.md").rename(root / "new.md")
+    db = tmp_path / "state.db"
+    db.write_bytes(b"not a sqlite database")
+
+    plan = build_db_reconciliation_plan(previous, snapshot_vault(root), db)
+
+    assert plan["summary"]["auto"] == 0
+    assert plan["summary"]["review"] == 1
+    assert plan["summary"]["skipped"] == 1
+    assert plan["skipped"][0]["kind"] == "db"
