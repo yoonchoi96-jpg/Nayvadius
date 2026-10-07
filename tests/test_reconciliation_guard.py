@@ -93,3 +93,51 @@ def test_protected_path_fails():
     result = validate_db_reconciliation_plan(plan)
     assert result["status"] == "FAIL"
     assert any("protected path" in error for error in result["errors"])
+
+def test_non_object_resolution_metadata_fails():
+    plan = _plan(auto=[{
+        "action": "AUTO",
+        "kind": "move",
+        "source": "old.md",
+        "target": "new.md",
+        "hash": "a" * 64,
+        "entity_resolution": [],
+        "wikilink_resolution": {"unresolved": []},
+    }])
+    plan["summary"]["auto"] = 1
+    plan["fingerprint"] = _fingerprint(plan)
+    result = validate_db_reconciliation_plan(plan)
+    assert result["status"] == "FAIL"
+    assert any("entity_resolution must be an object" in e for e in result["errors"])
+
+
+def test_invalid_fingerprint_format_fails():
+    plan = _plan()
+    plan["fingerprint"] = "g" * 64
+    result = validate_db_reconciliation_plan(plan)
+    assert result["status"] == "FAIL"
+    assert any("fingerprint is not a SHA-256 hex string" in e for e in result["errors"])
+
+
+def test_duplicate_auto_entries_fail():
+    item = {
+        "action": "AUTO",
+        "kind": "move",
+        "source": "old.md",
+        "target": "new.md",
+        "hash": "a" * 64,
+    }
+    plan = _plan(auto=[item, dict(item)])
+    plan["summary"]["auto"] = 2
+    plan["fingerprint"] = _fingerprint(plan)
+    result = validate_db_reconciliation_plan(plan)
+    assert result["status"] == "FAIL"
+    assert any("duplicate reconciliation entries" in e for e in result["errors"])
+
+
+def test_summary_must_be_object():
+    plan = _plan(summary=[])
+    plan["fingerprint"] = _fingerprint(plan)
+    result = validate_db_reconciliation_plan(plan)
+    assert result["status"] == "FAIL"
+    assert any("summary must be an object" in e for e in result["errors"])
