@@ -126,9 +126,12 @@ def validate_db_reconciliation_plan(plan: dict, root: str | Path | None = None) 
                     warnings.append(f"auto[{index}] was planned without live wikilink verification")
 
     auto_keys = []
-    for item in plan.get("auto", []):
-        if isinstance(item, dict):
-            auto_keys.append((item.get("source"), item.get("target"), item.get("hash")))
+    for index, item in enumerate(plan.get("auto", [])):
+        if not isinstance(item, dict):
+            continue
+        source, target, expected_hash = item.get("source"), item.get("target"), item.get("hash")
+        if isinstance(source, str) and isinstance(target, str) and isinstance(expected_hash, str):
+            auto_keys.append((source, target, expected_hash))
     if len(set(auto_keys)) != len(auto_keys):
         errors.append("auto contains duplicate reconciliation entries")
 
