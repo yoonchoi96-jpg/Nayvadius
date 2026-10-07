@@ -66,10 +66,12 @@ def apply_db_reconciliation_plan(root: str | Path, plan: dict, backup_dir: str =
             skipped.append({"item": item, "reason": "invalid source or target"}); continue
         if not source.is_file():
             skipped.append({"item": item, "reason": "source is missing"}); continue
-        if source.is_symlink():
-            skipped.append({"item": item, "reason": "source is a symlink"}); continue
+        if _contains_symlink(root, source):
+            skipped.append({"item": item, "reason": "source path contains a symlink"}); continue
         if len(expected) != 64 or _sha256(source.read_bytes()) != expected:
             skipped.append({"item": item, "reason": "source changed since reconciliation plan"}); continue
+        if _contains_symlink(root, target):
+            skipped.append({"item": item, "reason": "target path contains a symlink"}); continue
         if target.exists() or target.is_symlink():
             skipped.append({"item": item, "reason": "target now exists or is a symlink"}); continue
         if target.suffix.lower() != ".md":
