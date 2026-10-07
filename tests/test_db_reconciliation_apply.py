@@ -100,3 +100,46 @@ def test_partial_move_failure_rolls_back_completed_moves(tmp_path: Path, monkeyp
     assert (tmp_path / "old2.md").read_text() == "same"
     assert not (tmp_path / "20_Entities/People/New.md").exists()
     assert not (tmp_path / "20_Entities/People/New2.md").exists()
+
+
+def test_post_apply_verification_rejects_non_object_manifest(tmp_path: Path):
+    (tmp_path / "old.md").write_text("same")
+    r = apply_db_reconciliation_plan(tmp_path, plan(tmp_path), apply=True)
+    manifest = tmp_path / r["backup_manifest"]
+    manifest.write_text(json.dumps(["not", "an", "object"]))
+    v = verify_db_reconciliation_apply(tmp_path, r)
+    assert v["status"] == "FAIL"
+    assert "manifest must be an object" in v["errors"][0]
+
+
+def test_post_apply_verification_rejects_non_hex_manifest_hash(tmp_path: Path):
+    (tmp_path / "old.md").write_text("same")
+    r = apply_db_reconciliation_plan(tmp_path, plan(tmp_path), apply=True)
+    manifest = tmp_path / r["backup_manifest"]
+    data = json.loads(manifest.read_text())
+    data["operations"][0]["original_hash"] = "g" * 64
+    manifest.write_text(json.dumps(data))
+    v = verify_db_reconciliation_apply(tmp_path, r)
+    assert v["status"] == "FAIL"
+    assert "invalid original hash" in v["errors"][0]
+
+
+def test_post_apply_verification_rejects_unknown_operation(tmp_path: Path):
+    (tmp_path / "old.md").write_text("same")
+    r = apply_db_reconciliation_plan(tmp_path, plan(tmp_path), apply=True)
+    manifest = tmp_path / r["backup_manifest"]
+    data = json.loads(manifest.read_text())
+    data["operations"].append({"operation": "database_write"})
+    manifest.write_text(json.dumps(data))
+    v = verify_db_reconciliation_apply(tmp_path, r)
+    assert v["status"] == "FAIL"
+    assert any("unsupported operation" in e for e in v["errors"])
+
+
+def test_post_apply_verification_rejects_applied_manifest_mismatch(tmp_path: Path):
+    (tmp_path / "old.md").write_text("same")
+    r = apply_db_reconciliation_plan(tmp_path, plan(tmp_path), apply=True)
+    r["applied"][0]["target"] = "other.md"
+    v = verify_db_reconciliation_apply(tmp_path, r)
+    assert v["status"] == "FAIL"
+    assert any("do not match manifest move operations" in e for e in v["errors"])
