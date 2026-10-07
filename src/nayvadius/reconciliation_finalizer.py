@@ -14,6 +14,7 @@ from pathlib import Path
 
 SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
+
 def _safe_relative(root: Path, value: str) -> Path | None:
     if not isinstance(value, str):
         return None
@@ -34,6 +35,19 @@ def _safe_relative(root: Path, value: str) -> Path | None:
     return resolved
 
 
+def _contains_symlink_component(path: Path) -> bool:
+    """Reject a path whose existing components include symlinks."""
+    current = Path(path.anchor) if path.is_absolute() else Path()
+    parts = path.parts
+    if path.is_absolute():
+        parts = parts[1:]
+    for part in parts:
+        current = current / part
+        if current.is_symlink():
+            return True
+    return False
+
+
 def finalize_db_reconciliation_provenance(
     db_path: str | Path,
     vault_root: str | Path,
@@ -51,8 +65,6 @@ def finalize_db_reconciliation_provenance(
     if verification.get("status") != "VERIFIED":
         return {"status": "REVIEW", "recorded": 0, "reason": "apply result is not VERIFIED"}
 
-    # Never trust a caller-provided VERIFIED flag by itself. Re-run the
-    # read-only manifest/filesystem verification at the provenance boundary.
     from .db_reconciliation_apply import verify_db_reconciliation_apply
 
     live_verification = verify_db_reconciliation_apply(vault_root, apply_result)
@@ -134,13 +146,13 @@ def finalize_db_reconciliation_provenance(
         return {"status": "PLANNED", "recorded": len(validated), "entries": entries, "manifest": manifest_rel}
 
     db_path = Path(db_path)
-    if db_path.is_symlink():
-        return {"status": "REVIEW", "recorded": 0, "reason": "database path is a symlink"}
+    if _contains_symlink_component(db_path):
+        return {"status": "REVIEW", "recorded": 0, "reason": "database path contains a symlink"}
     if not db_path.is_file():
         return {"status": "FAIL", "recorded": 0, "reason": "database is missing"}
 
     now = datetime.now(timezone.utc).isoformat()
-    conn = sqlite3.connect(db_path, timeout=30)
+    conn = sqlite3.connect(f"file:{db_path}?mode=rw", uri=True, timeout=30)
     try:
         conn.execute(
             """CREATE TABLE IF NOT EXISTS reconciliation_provenance (
