@@ -59,7 +59,11 @@ def main() -> None:
             previous = json.load(fh)
         current, plan = build_live_db_reconciliation_plan(previous, args.output, args.db)
         write_db_reconciliation_plan(plan, plan_path)
-        write_vault_snapshot(current, snapshot_path)
+        # Never advance the baseline while changes are pending. Otherwise an
+        # AUTO move or REVIEW item could disappear from the next reconciliation
+        # run before it has been safely applied/resolved.
+        if plan.get("status") == "CLEAN":
+            write_vault_snapshot(current, snapshot_path)
         print(json.dumps(plan, ensure_ascii=False, indent=2))
         if plan["status"] == "FAIL":
             raise SystemExit(1)
