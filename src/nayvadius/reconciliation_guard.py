@@ -49,6 +49,13 @@ def validate_db_reconciliation_plan(plan: dict, root: str | Path | None = None) 
     if plan.get("status") not in {"PLANNED", "REVIEW", "CLEAN"}:
         errors.append(f"unsupported plan status: {plan.get('status')!r}")
 
+    for field in ("title", "previous_root", "current_root", "db_path", "fingerprint"):
+        if field in plan and not isinstance(plan[field], str):
+            errors.append(f"{field} must be a string")
+
+    if "fingerprint" in plan and (not isinstance(plan.get("fingerprint"), str) or not SHA256_RE.fullmatch(plan.get("fingerprint", ""))):
+        errors.append("fingerprint is not a SHA-256 hex string")
+
     if "fingerprint" in plan:
         try:
             expected = _fingerprint(plan)
@@ -92,17 +99,31 @@ def validate_db_reconciliation_plan(plan: dict, root: str | Path | None = None) 
 
         entity_resolution = item.get("entity_resolution")
         if entity_resolution is not None:
-            if entity_resolution.get("unresolved"):
+            if not isinstance(entity_resolution, dict):
+                errors.append(f"auto[{index}] entity_resolution must be an object")
+            elif entity_resolution.get("unresolved"):
                 errors.append(f"auto[{index}] contains unresolved entity mappings")
         link_resolution = item.get("wikilink_resolution")
         if link_resolution is not None:
-            if link_resolution.get("unresolved"):
-                errors.append(f"auto[{index}] contains unresolved wikilinks")
-            if link_resolution.get("status") == "unavailable":
-                warnings.append(f"auto[{index}] was planned without live wikilink verification")
+            if not isinstance(link_resolution, dict):
+                errors.append(f"auto[{index}] wikilink_resolution must be an object")
+            else:
+                if link_resolution.get("unresolved"):
+                    errors.append(f"auto[{index}] contains unresolved wikilinks")
+                if link_resolution.get("status") == "unavailable":
+                    warnings.append(f"auto[{index}] was planned without live wikilink verification")
+
+    auto_keys = []
+    for item in plan.get("auto", []):
+        if isinstance(item, dict):
+            auto_keys.append((item.get("source"), item.get("target"), item.get("hash")))
+    if len(set(auto_keys)) != len(auto_keys):
+        errors.append("auto contains duplicate reconciliation entries")
 
     summary = plan.get("summary", {})
-    if isinstance(summary, dict):
+    if not isinstance(summary, dict):
+        errors.append("summary must be an object")
+    else:
         if summary.get("auto") != len(plan.get("auto", [])):
             errors.append("summary.auto does not match auto length")
         if summary.get("review") != len(plan.get("review", [])):
