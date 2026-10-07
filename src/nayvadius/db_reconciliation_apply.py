@@ -195,6 +195,15 @@ def verify_db_reconciliation_apply(root: str | Path, result: dict) -> dict:
         else:
             errors.append(f"manifest contains unsupported operation: {kind!r}")
 
+    if len(move_keys) != len(set(move_keys)):
+        errors.append("manifest contains duplicate move operations")
+    rewrite_keys = []
+    for operation in operations:
+        if isinstance(operation, dict) and operation.get("operation") == "wikilink_rewrite":
+            rewrite_keys.append(operation.get("path"))
+    if len(rewrite_keys) != len(set(rewrite_keys)):
+        errors.append("manifest contains duplicate wikilink rewrite operations")
+
     applied = result.get("applied")
     if not isinstance(applied, list):
         errors.append("apply result applied must be a list")
