@@ -193,3 +193,23 @@ def test_post_apply_verification_rejects_duplicate_manifest_move(tmp_path: Path)
     v = verify_db_reconciliation_apply(tmp_path, r)
     assert v["status"] == "FAIL"
     assert any("duplicate move operations" in e for e in v["errors"])
+
+
+
+def test_apply_rejects_dangling_target_symlink(tmp_path: Path):
+    (tmp_path / "old.md").write_text("same")
+    (tmp_path / "new.md").symlink_to(tmp_path / "missing.md")
+    r = apply_db_reconciliation_plan(tmp_path, plan(tmp_path), apply=True)
+    assert r["status"] == "REVIEW"
+    assert (tmp_path / "old.md").exists()
+    assert (tmp_path / "new.md").is_symlink()
+
+
+def test_apply_rejects_symlink_backup_directory(tmp_path: Path):
+    (tmp_path / "old.md").write_text("same")
+    outside = tmp_path.parent / "outside-backup"
+    outside.mkdir()
+    (tmp_path / ".nayvadius-backup").symlink_to(outside, target_is_directory=True)
+    r = apply_db_reconciliation_plan(tmp_path, plan(tmp_path), apply=True)
+    assert r["status"] == "REVIEW"
+    assert (tmp_path / "old.md").exists()
