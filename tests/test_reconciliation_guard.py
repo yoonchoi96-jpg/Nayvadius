@@ -15,7 +15,7 @@ def _plan(**overrides):
         "auto": [],
         "review": [],
         "skipped": [],
-        "diff": {"summary": {"changed": 0}},
+        "diff": {"added": [], "deleted": [], "modified": [], "moved": [], "summary": {"added": 0, "deleted": 0, "modified": 0, "moved": 0, "changed": 0}},
         "db_summary": {},
         "summary": {"auto": 0, "review": 0, "skipped": 0, "changed": 0},
     }
@@ -158,3 +158,21 @@ def test_diff_and_db_summary_must_be_objects():
     assert result["status"] == "FAIL"
     assert any("diff must be an object" in e for e in result["errors"])
     assert any("db_summary must be an object" in e for e in result["errors"])
+
+
+def test_diff_summary_counts_must_match_diff_items():
+    plan = _plan()
+    plan["diff"]["summary"]["changed"] = 1
+    plan["fingerprint"] = _fingerprint(plan)
+    result = validate_db_reconciliation_plan(plan)
+    assert result["status"] == "FAIL"
+    assert any("diff.summary.changed does not match diff item counts" in e for e in result["errors"])
+
+
+def test_diff_summary_requires_all_change_arrays():
+    plan = _plan()
+    del plan["diff"]["modified"]
+    plan["fingerprint"] = _fingerprint(plan)
+    result = validate_db_reconciliation_plan(plan)
+    assert result["status"] == "FAIL"
+    assert any("diff.modified must be a list" in e for e in result["errors"])
