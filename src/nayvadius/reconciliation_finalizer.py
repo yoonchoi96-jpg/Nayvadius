@@ -72,7 +72,12 @@ def finalize_db_reconciliation_provenance(
     if manifest_path is None or not manifest_path.is_file():
         return {"status": "REVIEW", "recorded": 0, "reason": "backup manifest is missing or unsafe"}
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest_bytes = manifest_path.read_bytes()
+        manifest_hash = __import__("hashlib").sha256(manifest_bytes).hexdigest()
+        verified_manifest_hash = live_verification.get("manifest_hash")
+        if not isinstance(verified_manifest_hash, str) or manifest_hash != verified_manifest_hash:
+            return {"status": "REVIEW", "recorded": 0, "reason": "backup manifest changed after verification"}
+        manifest = json.loads(manifest_bytes.decode("utf-8"))
     except (OSError, ValueError, TypeError) as exc:
         return {"status": "REVIEW", "recorded": 0, "reason": f"invalid backup manifest: {exc}"}
     operations = manifest.get("operations") if isinstance(manifest, dict) else None
