@@ -260,7 +260,13 @@ def verify_db_reconciliation_apply(root: str | Path, result: dict) -> dict:
             if not isinstance(entry, dict):
                 errors.append("apply result contains a non-object applied entry")
                 continue
-            applied_keys.append((entry.get("source"), entry.get("target"), entry.get("hash")))
+            source = entry.get("source")
+            target = entry.get("target")
+            entry_hash = entry.get("hash")
+            if not isinstance(source, str) or not isinstance(target, str) or not isinstance(entry_hash, str):
+                errors.append("apply result contains invalid applied entry fields")
+                continue
+            applied_keys.append((source, target, entry_hash))
         if Counter(applied_keys) != Counter(move_keys):
             errors.append("apply result applied entries do not match manifest move operations")
     for operation in operations:
