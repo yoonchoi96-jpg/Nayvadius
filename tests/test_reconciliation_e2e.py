@@ -80,3 +80,27 @@ def test_full_db_vault_reconciliation_lifecycle(tmp_path: Path):
         "new.md",
         applied["backup_manifest"],
     )
+
+
+
+def test_verify_rejects_unhashable_applied_entry_without_crashing(tmp_path: Path):
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"operations": [{
+        "operation": "move",
+        "original_path": "old.md",
+        "new_path": "new.md",
+        "original_hash": _hash("same"),
+    }]}), encoding="utf-8")
+    (tmp_path / "new.md").write_text("same", encoding="utf-8")
+
+    result = verify_db_reconciliation_apply(
+        tmp_path,
+        {
+            "status": "APPLIED",
+            "backup_manifest": "manifest.json",
+            "applied": [{"source": [], "target": {}, "hash": "same"}],
+        },
+    )
+
+    assert result["status"] == "FAIL"
+    assert "invalid applied entry fields" in result["errors"]
