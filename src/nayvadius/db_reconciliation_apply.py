@@ -46,6 +46,9 @@ def _contains_symlink(root: Path, path: Path) -> bool:
 
 def apply_db_reconciliation_plan(root: str | Path, plan: dict, backup_dir: str = ".nayvadius-backup", apply: bool = False) -> dict:
     root = Path(root)
+    if root.is_symlink() or not root.exists() or not root.is_dir():
+        return {"status": "REVIEW", "applied": [], "skipped": [], "changed": 0,
+                "reason": "vault root is missing, not a directory, or is a symlink"}
     backup_candidate = Path(backup_dir)
     if backup_candidate.is_absolute() or not backup_dir or ".." in backup_candidate.parts:
         return {"status": "REVIEW", "applied": [], "skipped": [], "changed": 0,
@@ -199,6 +202,8 @@ def apply_db_reconciliation_plan(root: str | Path, plan: dict, backup_dir: str =
 def verify_db_reconciliation_apply(root: str | Path, result: dict) -> dict:
     """Verify an applied reconciliation result without mutating the vault."""
     root = Path(root)
+    if root.is_symlink() or not root.exists() or not root.is_dir():
+        return {"status": "FAIL", "errors": ["vault root is missing, not a directory, or is a symlink"], "checked": 0}
     if not isinstance(result, dict):
         return {"status": "FAIL", "errors": ["apply result must be an object"], "checked": 0}
     if result.get("status") != "APPLIED":
