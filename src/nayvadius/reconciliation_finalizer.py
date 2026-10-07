@@ -64,6 +64,8 @@ def finalize_db_reconciliation_provenance(
         return {"status": "REVIEW", "recorded": 0, "reason": "apply result is not APPLIED"}
     if verification.get("status") != "VERIFIED":
         return {"status": "REVIEW", "recorded": 0, "reason": "apply result is not VERIFIED"}
+    if apply_result.get("skipped"):
+        return {"status": "REVIEW", "recorded": 0, "reason": "pending reconciliation items remain"}
 
     from .db_reconciliation_apply import verify_db_reconciliation_apply
 
