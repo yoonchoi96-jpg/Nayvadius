@@ -143,3 +143,41 @@ def test_post_apply_verification_rejects_applied_manifest_mismatch(tmp_path: Pat
     v = verify_db_reconciliation_apply(tmp_path, r)
     assert v["status"] == "FAIL"
     assert any("do not match manifest move operations" in e for e in v["errors"])
+
+
+def test_apply_rejects_unsafe_backup_directory(tmp_path: Path):
+    (tmp_path / "old.md").write_text("same")
+    r = apply_db_reconciliation_plan(tmp_path, plan(tmp_path), backup_dir="../outside", apply=True)
+    assert r["status"] == "REVIEW"
+    assert (tmp_path / "old.md").exists()
+
+
+def test_apply_rejects_symlink_source(tmp_path: Path):
+    target = tmp_path / "real.md"
+    target.write_text("same")
+    (tmp_path / "old.md").symlink_to(target)
+    r = apply_db_reconciliation_plan(tmp_path, plan(tmp_path), apply=True)
+    assert r["status"] == "REVIEW"
+    assert (tmp_path / "old.md").is_symlink()
+
+
+def test_apply_detects_source_change_during_backup(monkeypatch, tmp_path: Path):
+    (tmp_path / "old.md").write_text("same")
+    from nayvadius import db_reconciliation_apply as mod
+    original_read = mod.Path.read_bytes
+    calls = {"n": 0}
+
+    def changing_read(self):
+        data = original_read(self)
+        if self.name == "old.md":
+            calls["n"] += 1
+            if calls["n"] == 2:
+                self.write_text("changed")
+                return b"changed"
+        return data
+
+    monkeypatch.setattr(mod.Path, "read_bytes", changing_read)
+    r = mod.apply_db_reconciliation_plan(tmp_path, plan(tmp_path), apply=True)
+    assert r["status"] == "FAIL"
+    assert r["rollback"]["status"] == "RESTORED"
+    assert (tmp_path / "old.md").read_text() == "changed"
