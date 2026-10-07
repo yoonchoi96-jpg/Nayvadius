@@ -255,8 +255,8 @@ def verify_db_reconciliation_apply(root: str | Path, result: dict) -> dict:
             if not isinstance(original_hash, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", original_hash):
                 errors.append(f"move has invalid original hash: {operation.get('original_path')}")
                 continue
-            if source is None or target is None:
-                errors.append("manifest contains an unsafe move path")
+            if source is None or target is None or _contains_symlink(root, source) or _contains_symlink(root, target):
+                errors.append("manifest contains an unsafe or symlinked move path")
                 continue
             if source.exists():
                 errors.append(f"source still exists: {operation.get('original_path')}")
@@ -271,7 +271,7 @@ def verify_db_reconciliation_apply(root: str | Path, result: dict) -> dict:
                 errors.append(f"wikilink rewrite has invalid new hash: {operation.get('path')}")
                 continue
             path = _safe_relative(root, operation.get("path", ""))
-            if path is None or not path.is_file():
+            if path is None or _contains_symlink(root, path) or not path.is_file():
                 errors.append(f"rewritten file is missing: {operation.get('path')}")
             elif _sha256(path.read_bytes()) != new_hash:
                 errors.append(f"rewritten file hash mismatch: {operation.get('path')}")
