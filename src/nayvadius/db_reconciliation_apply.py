@@ -168,13 +168,19 @@ def apply_db_reconciliation_plan(root: str | Path, plan: dict, backup_dir: str =
         rollback_errors = []
         for path, original in reversed(list(rewritten.items())):
             try:
+                if _contains_symlink(root, path):
+                    raise RuntimeError("rollback path contains a symlink")
                 path.write_text(original, encoding="utf-8")
             except Exception as rollback_exc:
                 rollback_errors.append(f"rewrite rollback failed for {path}: {rollback_exc}")
         for source, target in reversed(moved):
             try:
+                if _contains_symlink(root, target) or _contains_symlink(root, source):
+                    raise RuntimeError("rollback source or target contains a symlink")
                 if target.exists() and not source.exists():
-                    target.parent.mkdir(parents=True, exist_ok=True)
+                    source.parent.mkdir(parents=True, exist_ok=True)
+                    if _contains_symlink(root, source.parent):
+                        raise RuntimeError("rollback source parent contains a symlink")
                     target.rename(source)
             except Exception as rollback_exc:
                 rollback_errors.append(f"move rollback failed for {target}: {rollback_exc}")
