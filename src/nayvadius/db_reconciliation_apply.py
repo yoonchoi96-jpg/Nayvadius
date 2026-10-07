@@ -222,9 +222,22 @@ def verify_db_reconciliation_apply(root: str | Path, result: dict) -> dict:
             continue
         kind = operation.get("operation")
         if kind == "move":
-            move_keys.append((operation.get("original_path"), operation.get("new_path"), operation.get("original_hash")))
+            original_path = operation.get("original_path")
+            new_path = operation.get("new_path")
+            original_hash = operation.get("original_hash")
+            if not isinstance(original_path, str) or not isinstance(new_path, str):
+                errors.append("manifest move contains invalid path types")
+                continue
+            if not isinstance(original_hash, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", original_hash):
+                errors.append("manifest move contains invalid hash")
+                continue
+            move_keys.append((original_path, new_path, original_hash))
         elif kind == "wikilink_rewrite":
-            continue
+            path = operation.get("path")
+            if not isinstance(path, str):
+                errors.append("manifest wikilink rewrite contains invalid path type")
+                continue
+            rewrite_keys.append(path)
         else:
             errors.append(f"manifest contains unsupported operation: {kind!r}")
 
@@ -233,7 +246,9 @@ def verify_db_reconciliation_apply(root: str | Path, result: dict) -> dict:
     rewrite_keys = []
     for operation in operations:
         if isinstance(operation, dict) and operation.get("operation") == "wikilink_rewrite":
-            rewrite_keys.append(operation.get("path"))
+            path = operation.get("path")
+            if isinstance(path, str):
+                rewrite_keys.append(path)
     if len(rewrite_keys) != len(set(rewrite_keys)):
         errors.append("manifest contains duplicate wikilink rewrite operations")
 
