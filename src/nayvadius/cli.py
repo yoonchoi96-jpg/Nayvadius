@@ -97,7 +97,7 @@ def main() -> None:
         result = finalize_db_reconciliation_provenance(
             args.db, args.output, apply_result, verification, apply=args.apply
         )
-        if args.apply and result.get("status") == "FINALIZED":
+        if args.apply and result.get("status") == "FINALIZED" and not apply_result.get("skipped"):
             snapshot_path = Path(args.snapshot or (str(args.output).rstrip("/") + "/vault_snapshot.json"))
             write_vault_snapshot(snapshot_vault(args.output), snapshot_path)
         print(json.dumps({"verification": verification, "finalization": result},
