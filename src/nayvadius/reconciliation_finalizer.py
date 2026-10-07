@@ -64,7 +64,9 @@ def finalize_db_reconciliation_provenance(
         return {"status": "FAIL", "recorded": 0, "reason": "invalid applied entries"}
 
     vault_root = Path(vault_root)
-    manifest_rel = str(apply_result.get("backup_manifest", ""))
+    manifest_rel = apply_result.get("backup_manifest", "")
+    if not isinstance(manifest_rel, str):
+        return {"status": "REVIEW", "recorded": 0, "reason": "backup manifest path must be a string"}
     manifest_path = _safe_relative(vault_root, manifest_rel)
     if manifest_path is None or not manifest_path.is_file():
         return {"status": "REVIEW", "recorded": 0, "reason": "backup manifest is missing or unsafe"}
@@ -75,11 +77,26 @@ def finalize_db_reconciliation_provenance(
     operations = manifest.get("operations") if isinstance(manifest, dict) else None
     if not isinstance(operations, list):
         return {"status": "REVIEW", "recorded": 0, "reason": "invalid backup manifest structure"}
-    move_keys = {
-        (op.get("original_path"), op.get("new_path"), op.get("original_hash"))
-        for op in operations
-        if isinstance(op, dict) and op.get("operation") == "move"
-    }
+    move_keys = set()
+    move_count = 0
+    for index, op in enumerate(operations):
+        if not isinstance(op, dict):
+            return {"status": "REVIEW", "recorded": 0, "reason": f"manifest operation {index} must be an object"}
+        kind = op.get("operation")
+        if kind == "move":
+            move_count += 1
+            original_path = op.get("original_path")
+            new_path = op.get("new_path")
+            original_hash = op.get("original_hash")
+            if not isinstance(original_path, str) or not isinstance(new_path, str):
+                return {"status": "REVIEW", "recorded": 0, "reason": f"manifest move {index} has invalid path types"}
+            if not isinstance(original_hash, str) or not SHA256_RE.fullmatch(original_hash):
+                return {"status": "REVIEW", "recorded": 0, "reason": f"manifest move {index} has invalid hash"}
+            move_keys.add((original_path, new_path, original_hash))
+        elif kind != "wikilink_rewrite":
+            return {"status": "REVIEW", "recorded": 0, "reason": f"unsupported manifest operation: {kind!r}"}
+    if len(move_keys) != move_count:
+        return {"status": "REVIEW", "recorded": 0, "reason": "manifest contains duplicate move operations"}
 
     validated = []
     for entry in entries:
@@ -101,6 +118,8 @@ def finalize_db_reconciliation_provenance(
         return {"status": "PLANNED", "recorded": len(validated), "entries": entries, "manifest": manifest_rel}
 
     db_path = Path(db_path)
+    if db_path.is_symlink():
+        return {"status": "REVIEW", "recorded": 0, "reason": "database path is a symlink"}
     if not db_path.is_file():
         return {"status": "FAIL", "recorded": 0, "reason": "database is missing"}
 
