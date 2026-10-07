@@ -83,8 +83,8 @@ def finalize_db_reconciliation_provenance(
         return {"status": "FAIL", "recorded": 0, "reason": "invalid applied entries"}
 
     vault_root = Path(vault_root)
-    if not vault_root.exists() or not vault_root.is_dir():
-        return {"status": "REVIEW", "recorded": 0, "reason": "vault root is missing or not a directory"}
+    if vault_root.is_symlink() or not vault_root.exists() or not vault_root.is_dir():
+        return {"status": "REVIEW", "recorded": 0, "reason": "vault root is missing, not a directory, or is a symlink"}
     manifest_rel = apply_result.get("backup_manifest", "")
     if not isinstance(manifest_rel, str):
         return {"status": "REVIEW", "recorded": 0, "reason": "backup manifest path must be a string"}
