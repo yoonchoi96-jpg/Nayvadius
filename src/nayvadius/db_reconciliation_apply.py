@@ -200,7 +200,9 @@ def verify_db_reconciliation_apply(root: str | Path, result: dict) -> dict:
     if manifest_path is None or not manifest_path.is_file():
         return {"status": "FAIL", "errors": ["backup manifest is missing"], "checked": 0}
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest_bytes = manifest_path.read_bytes()
+        manifest_hash = _sha256(manifest_bytes)
+        manifest = json.loads(manifest_bytes.decode("utf-8"))
     except (OSError, ValueError, TypeError) as exc:
         return {"status": "FAIL", "errors": [f"invalid backup manifest: {exc}"], "checked": 0}
     if not isinstance(manifest, dict):
@@ -287,4 +289,5 @@ def verify_db_reconciliation_apply(root: str | Path, result: dict) -> dict:
         "errors": errors,
         "checked": checked,
         "manifest": manifest_rel,
+        "manifest_hash": manifest_hash,
     }
