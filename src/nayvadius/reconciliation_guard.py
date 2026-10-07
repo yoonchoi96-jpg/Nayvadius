@@ -80,6 +80,9 @@ def validate_db_reconciliation_plan(plan: dict, root: str | Path | None = None) 
         for key in ("source", "target", "hash"):
             if not item.get(key):
                 errors.append(f"auto[{index}] missing {key}")
+        for key in ("source", "target"):
+            if key in item and not isinstance(item.get(key), str):
+                errors.append(f"auto[{index}] {key} must be a string")
         if item.get("source") == item.get("target"):
             errors.append(f"auto[{index}] source and target are identical")
         expected_hash = item.get("hash")
