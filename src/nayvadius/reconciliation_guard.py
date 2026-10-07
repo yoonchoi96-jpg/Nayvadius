@@ -69,6 +69,15 @@ def validate_db_reconciliation_plan(plan: dict, root: str | Path | None = None) 
         if field in plan and not isinstance(plan[field], list):
             errors.append(f"{field} must be a list")
 
+    for field in ("review", "skipped"):
+        for index, item in enumerate(plan.get(field, [])):
+            if not isinstance(item, dict):
+                errors.append(f"{field}[{index}] must be an object")
+
+    for field in ("diff", "db_summary"):
+        if field in plan and not isinstance(plan[field], dict):
+            errors.append(f"{field} must be an object")
+
     for index, item in enumerate(plan.get("auto", [])):
         if not isinstance(item, dict):
             errors.append(f"auto[{index}] must be an object")
