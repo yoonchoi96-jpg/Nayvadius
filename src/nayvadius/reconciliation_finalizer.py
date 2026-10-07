@@ -42,6 +42,10 @@ def finalize_db_reconciliation_provenance(
     *,
     apply: bool = False,
 ) -> dict:
+    if not isinstance(apply_result, dict):
+        return {"status": "REVIEW", "recorded": 0, "reason": "apply result must be an object"}
+    if not isinstance(verification, dict):
+        return {"status": "REVIEW", "recorded": 0, "reason": "verification result must be an object"}
     if apply_result.get("status") != "APPLIED":
         return {"status": "REVIEW", "recorded": 0, "reason": "apply result is not APPLIED"}
     if verification.get("status") != "VERIFIED":
@@ -65,6 +69,8 @@ def finalize_db_reconciliation_provenance(
         return {"status": "FAIL", "recorded": 0, "reason": "invalid applied entries"}
 
     vault_root = Path(vault_root)
+    if not vault_root.exists() or not vault_root.is_dir():
+        return {"status": "REVIEW", "recorded": 0, "reason": "vault root is missing or not a directory"}
     manifest_rel = apply_result.get("backup_manifest", "")
     if not isinstance(manifest_rel, str):
         return {"status": "REVIEW", "recorded": 0, "reason": "backup manifest path must be a string"}
