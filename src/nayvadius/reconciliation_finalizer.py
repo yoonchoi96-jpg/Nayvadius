@@ -117,7 +117,18 @@ def finalize_db_reconciliation_provenance(
             if not isinstance(original_hash, str) or not SHA256_RE.fullmatch(original_hash):
                 return {"status": "REVIEW", "recorded": 0, "reason": f"manifest move {index} has invalid hash"}
             move_keys.add((original_path, new_path, original_hash))
-        elif kind != "wikilink_rewrite":
+        elif kind == "wikilink_rewrite":
+            path = op.get("path")
+            original_hash = op.get("original_hash")
+            new_hash = op.get("new_hash")
+            backup_path = op.get("backup_path")
+            if not isinstance(path, str) or not isinstance(backup_path, str):
+                return {"status": "REVIEW", "recorded": 0, "reason": f"manifest rewrite {index} has invalid path types"}
+            if not isinstance(original_hash, str) or not SHA256_RE.fullmatch(original_hash):
+                return {"status": "REVIEW", "recorded": 0, "reason": f"manifest rewrite {index} has invalid original hash"}
+            if not isinstance(new_hash, str) or not SHA256_RE.fullmatch(new_hash):
+                return {"status": "REVIEW", "recorded": 0, "reason": f"manifest rewrite {index} has invalid new hash"}
+        else:
             return {"status": "REVIEW", "recorded": 0, "reason": f"unsupported manifest operation: {kind!r}"}
     if len(move_keys) != move_count:
         return {"status": "REVIEW", "recorded": 0, "reason": "manifest contains duplicate move operations"}
