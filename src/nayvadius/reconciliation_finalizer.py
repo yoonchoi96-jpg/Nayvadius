@@ -15,7 +15,9 @@ from pathlib import Path
 SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
 def _safe_relative(root: Path, value: str) -> Path | None:
-    candidate = Path(str(value or ""))
+    if not isinstance(value, str):
+        return None
+    candidate = Path(value)
     if candidate.is_absolute() or not value or ".." in candidate.parts:
         return None
     resolved = (root / candidate).resolve()
