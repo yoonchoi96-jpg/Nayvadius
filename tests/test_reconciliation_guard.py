@@ -141,3 +141,20 @@ def test_summary_must_be_object():
     result = validate_db_reconciliation_plan(plan)
     assert result["status"] == "FAIL"
     assert any("summary must be an object" in e for e in result["errors"])
+
+
+
+def test_review_and_skipped_entries_must_be_objects():
+    plan = _plan(review=["bad"], skipped=["bad"])
+    result = validate_db_reconciliation_plan(plan)
+    assert result["status"] == "FAIL"
+    assert any("review[0] must be an object" in e for e in result["errors"])
+    assert any("skipped[0] must be an object" in e for e in result["errors"])
+
+
+def test_diff_and_db_summary_must_be_objects():
+    plan = _plan(diff=[], db_summary=[])
+    result = validate_db_reconciliation_plan(plan)
+    assert result["status"] == "FAIL"
+    assert any("diff must be an object" in e for e in result["errors"])
+    assert any("db_summary must be an object" in e for e in result["errors"])
