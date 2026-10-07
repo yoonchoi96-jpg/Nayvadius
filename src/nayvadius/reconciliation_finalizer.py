@@ -165,7 +165,10 @@ def finalize_db_reconciliation_provenance(
         return {"status": "FAIL", "recorded": 0, "reason": "database is missing"}
 
     now = datetime.now(timezone.utc).isoformat()
-    conn = sqlite3.connect(f"file:{db_path}?mode=rw", uri=True, timeout=30)
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=rw", uri=True, timeout=30)
+    except (OSError, sqlite3.Error) as exc:
+        return {"status": "REVIEW", "recorded": 0, "reason": f"database could not be opened: {exc}"}
     try:
         conn.execute(
             """CREATE TABLE IF NOT EXISTS reconciliation_provenance (
