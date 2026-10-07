@@ -103,9 +103,13 @@ def finalize_db_reconciliation_provenance(
         if not isinstance(entry, dict):
             return {"status": "FAIL", "recorded": 0, "reason": "invalid applied entry"}
         document_id = entry.get("document_id")
-        old_path = str(entry.get("source", ""))
-        new_path = str(entry.get("target", ""))
-        content_hash = str(entry.get("hash", ""))
+        old_path = entry.get("source")
+        new_path = entry.get("target")
+        content_hash = entry.get("hash")
+        if not isinstance(old_path, str) or not isinstance(new_path, str):
+            return {"status": "FAIL", "recorded": 0, "reason": "invalid applied path types", "entry": entry}
+        if not isinstance(content_hash, str):
+            return {"status": "FAIL", "recorded": 0, "reason": "invalid content hash type", "entry": entry}
         if not document_id:
             return {"status": "REVIEW", "recorded": 0, "reason": "AUTO entry lacks document_id", "entry": entry}
         if not SHA256_RE.fullmatch(content_hash):
