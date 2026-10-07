@@ -59,9 +59,9 @@ def main() -> None:
             previous = json.load(fh)
         current, plan = build_live_db_reconciliation_plan(previous, args.output, args.db)
         write_db_reconciliation_plan(plan, plan_path)
-        # Never advance the baseline while changes are pending. Otherwise an
-        # AUTO move or REVIEW item could disappear from the next reconciliation
-        # run before it has been safely applied/resolved.
+        # The baseline advances only after the reconciliation has been safely
+        # applied, verified, and finalized. A pending change must remain
+        # visible across repeated plan generation.
         if plan.get("status") == "CLEAN":
             write_vault_snapshot(current, snapshot_path)
         print(json.dumps(plan, ensure_ascii=False, indent=2))
@@ -97,6 +97,9 @@ def main() -> None:
         result = finalize_db_reconciliation_provenance(
             args.db, args.output, apply_result, verification, apply=args.apply
         )
+        if args.apply and result.get("status") == "FINALIZED":
+            snapshot_path = Path(args.snapshot or (str(args.output).rstrip("/") + "/vault_snapshot.json"))
+            write_vault_snapshot(snapshot_vault(args.output), snapshot_path)
         print(json.dumps({"verification": verification, "finalization": result},
                          ensure_ascii=False, indent=2))
         if result["status"] == "FAIL":
