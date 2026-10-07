@@ -258,3 +258,42 @@ def test_finalizer_reports_new_and_existing_provenance_separately(tmp_path: Path
     assert first["already_recorded"] == 0
     assert second["recorded"] == 0
     assert second["already_recorded"] == 1
+
+
+
+def test_finalizer_rejects_pending_skipped_items(tmp_path: Path):
+    db = tmp_path / "state.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute("CREATE TABLE documents (id TEXT PRIMARY KEY, content_hash TEXT)")
+        conn.execute("INSERT INTO documents VALUES (?, ?)", ("doc-1", _hash("same")))
+
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({"operations": [{
+        "operation": "move",
+        "original_path": "old.md",
+        "new_path": "new.md",
+        "original_hash": _hash("same"),
+    }]}))
+    (tmp_path / "new.md").write_text("same", encoding="utf-8")
+    apply_result = {
+        "status": "APPLIED",
+        "backup_manifest": "manifest.json",
+        "applied": [{
+            "document_id": "doc-1",
+            "source": "old.md",
+            "target": "new.md",
+            "hash": _hash("same"),
+        }],
+        "skipped": [{"reason": "pending review"}],
+    }
+
+    result = finalize_db_reconciliation_provenance(
+        db, tmp_path, apply_result, {"status": "VERIFIED"}, apply=True
+    )
+
+    assert result["status"] == "REVIEW"
+    assert result["recorded"] == 0
+    with sqlite3.connect(db) as conn:
+        assert conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='reconciliation_provenance'"
+        ).fetchone() is None
