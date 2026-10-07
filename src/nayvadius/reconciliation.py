@@ -296,17 +296,28 @@ def build_db_reconciliation_plan(previous: dict, current: dict, db_path: str | P
     diff = compare_vault_snapshots(previous, current)
     db_file = Path(db_path) if db_path else None
     db_available = bool(db_file) and db_file.is_file()
-    db_index = (
-        _db_identity_index(db_file)
-        if db_available
-        else {
+    db_error = None
+    if db_available:
+        try:
+            db_index = _db_identity_index(db_file)
+        except (OSError, sqlite3.Error) as exc:
+            db_available = False
+            db_error = str(exc)
+            db_index = {
+                "by_hash": {},
+                "document_count": 0,
+                "entity_links": 0,
+                "aliases": {},
+                "entity_aliases": {},
+            }
+    else:
+        db_index = {
             "by_hash": {},
             "document_count": 0,
             "entity_links": 0,
             "aliases": {},
             "entity_aliases": {},
         }
-    )
     auto, review, skipped = [], [], []
     vault_entities = _vault_entity_index(vault_root) if vault_root else {}
     canonical_vault_entities = _vault_canonical_index(vault_root) if vault_root else {}
@@ -420,7 +431,10 @@ def build_db_reconciliation_plan(previous: dict, current: dict, db_path: str | P
         review.append(item)
 
     if not db_available:
-        skipped.append({"kind": "db", "reason": "DB unavailable; all changed items remain REVIEW"})
+        reason = "DB unavailable; all changed items remain REVIEW"
+        if db_error:
+            reason += f": {db_error}"
+        skipped.append({"kind": "db", "reason": reason})
 
     plan = {
         "title": "Nayvadius DB ↔ Vault Reconciliation Plan",
