@@ -193,6 +193,8 @@ def apply_db_reconciliation_plan(root: str | Path, plan: dict, backup_dir: str =
 def verify_db_reconciliation_apply(root: str | Path, result: dict) -> dict:
     """Verify an applied reconciliation result without mutating the vault."""
     root = Path(root)
+    if not isinstance(result, dict):
+        return {"status": "FAIL", "errors": ["apply result must be an object"], "checked": 0}
     if result.get("status") != "APPLIED":
         return {"status": "FAIL", "errors": ["apply result is not APPLIED"], "checked": 0}
     manifest_rel = result.get("backup_manifest")
@@ -216,6 +218,7 @@ def verify_db_reconciliation_apply(root: str | Path, result: dict) -> dict:
         return {"status": "FAIL", "errors": ["backup manifest contains no operations"], "checked": 0, "manifest": manifest_rel}
 
     move_keys = []
+    rewrite_keys = []
     for operation in operations:
         if not isinstance(operation, dict):
             errors.append("manifest contains a non-object operation")
@@ -243,12 +246,6 @@ def verify_db_reconciliation_apply(root: str | Path, result: dict) -> dict:
 
     if len(move_keys) != len(set(move_keys)):
         errors.append("manifest contains duplicate move operations")
-    rewrite_keys = []
-    for operation in operations:
-        if isinstance(operation, dict) and operation.get("operation") == "wikilink_rewrite":
-            path = operation.get("path")
-            if isinstance(path, str):
-                rewrite_keys.append(path)
     if len(rewrite_keys) != len(set(rewrite_keys)):
         errors.append("manifest contains duplicate wikilink rewrite operations")
 
