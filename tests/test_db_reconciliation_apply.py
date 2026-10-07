@@ -181,3 +181,15 @@ def test_apply_detects_source_change_during_backup(monkeypatch, tmp_path: Path):
     assert r["status"] == "FAIL"
     assert r["rollback"]["status"] == "RESTORED"
     assert (tmp_path / "old.md").read_text() == "changed"
+
+
+def test_post_apply_verification_rejects_duplicate_manifest_move(tmp_path: Path):
+    (tmp_path / "old.md").write_text("same")
+    r = apply_db_reconciliation_plan(tmp_path, plan(tmp_path), apply=True)
+    manifest = tmp_path / r["backup_manifest"]
+    data = json.loads(manifest.read_text())
+    data["operations"].append(dict(data["operations"][0]))
+    manifest.write_text(json.dumps(data))
+    v = verify_db_reconciliation_apply(tmp_path, r)
+    assert v["status"] == "FAIL"
+    assert any("duplicate move operations" in e for e in v["errors"])
