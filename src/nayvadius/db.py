@@ -305,7 +305,7 @@ def vocabulary_links(vocabulary_id=None):
   return c.execute("SELECT entity_name,entity_type,vocabulary_id,match_type,confidence FROM entity_vocabulary_links ORDER BY entity_name,vocabulary_id").fetchall()
 
 def status():
- with connect() as c: return {t:c.execute('SELECT COUNT(*) FROM '+t).fetchone()[0] for t in ('documents','entities','relations','document_relations','evidence','relation_evidence','entity_aliases','llm_cache','processing_failures','entity_merge_log','vocabularies','vocabulary_aliases','entity_vocabulary_links')}
+ with connect() as c: return {t:c.execute('SELECT COUNT(*) FROM '+t).fetchone()[0] for t in ('documents','document_sources','source_conflicts','entities','relations','document_relations','evidence','relation_evidence','entity_aliases','llm_cache','processing_failures','entity_merge_log','vocabularies','vocabulary_aliases','entity_vocabulary_links')}
 
 def log_entity_merge(canonical_name, duplicate_name, entity_type, reason):
  with connect() as db:
