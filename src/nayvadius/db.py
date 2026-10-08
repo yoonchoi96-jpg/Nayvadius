@@ -31,18 +31,54 @@ def _migrate_document_metadata(db):
 
 
 def save_document_source(document_id, source, source_id, metadata=None):
-    if not source or not source_id:
+    """Persist immutable (source, source_id) identity without silent remapping.
+
+    Replays of the same identity are idempotent. A source identity that points
+    at a different document is a provenance conflict: the existing mapping is
+    retained and the conflict is recorded for review.
+    """
+    if not source or not source_id or not document_id:
         return False
+    source = str(source).strip().casefold()
+    source_id = str(source_id).strip()
+    document_id = str(document_id).strip()
     payload = json.dumps(metadata or {}, ensure_ascii=False, sort_keys=True)
     with connect() as db:
+        db.execute(
+            """CREATE TABLE IF NOT EXISTS source_conflicts(
+               id INTEGER PRIMARY KEY AUTOINCREMENT,
+               document_id TEXT NOT NULL,
+               field TEXT NOT NULL,
+               existing_source TEXT NOT NULL,
+               incoming_source TEXT NOT NULL,
+               existing_value TEXT NOT NULL,
+               incoming_value TEXT NOT NULL,
+               resolution TEXT NOT NULL,
+               created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"""
+        )
+        existing = db.execute(
+            "SELECT document_id,metadata FROM document_sources WHERE source=? AND source_id=?",
+            (source, source_id),
+        ).fetchone()
+        if existing and existing[0] != document_id:
+            db.execute(
+                """INSERT INTO source_conflicts(
+                   document_id,field,existing_source,incoming_source,
+                   existing_value,incoming_value,resolution)
+                   VALUES(?,?,?,?,?,?,?)""",
+                (
+                    document_id, "source_identity", source, source,
+                    existing[0], document_id, "review",
+                ),
+            )
+            return False
         db.execute(
             """INSERT INTO document_sources(source,source_id,document_id,metadata)
                VALUES(?,?,?,?)
                ON CONFLICT(source,source_id) DO UPDATE SET
-               document_id=excluded.document_id,
                metadata=excluded.metadata,
                last_seen_at=CURRENT_TIMESTAMP""",
-            (str(source), str(source_id), str(document_id), payload),
+            (source, source_id, document_id, payload),
         )
     return True
 
@@ -65,23 +101,6 @@ def compare_source_priority(left_source, right_source):
     left = source_priority(left_source)
     right = source_priority(right_source)
     return (left > right) - (left < right)
-
-
-def save_document_source(document_id, source, source_id, metadata=None):
-    if not source or not source_id:
-        return False
-    payload = json.dumps(metadata or {}, ensure_ascii=False, sort_keys=True)
-    with connect() as db:
-        db.execute(
-            """INSERT INTO document_sources(source,source_id,document_id,metadata)
-               VALUES(?,?,?,?)
-               ON CONFLICT(source,source_id) DO UPDATE SET
-               document_id=excluded.document_id,
-               metadata=excluded.metadata,
-               last_seen_at=CURRENT_TIMESTAMP""",
-            (str(source), str(source_id), str(document_id), payload),
-        )
-    return True
 
 
 def record_source_conflict(document_id, field, existing_source, incoming_source,
