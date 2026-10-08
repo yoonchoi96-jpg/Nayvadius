@@ -66,6 +66,9 @@ jobs:
             exit 0
           fi
           python -m nayvadius.cli retry-failed --source abraham --input "$INPUT_PATH" --output output --max-attempts 5
+      - name: Refresh cross-source provenance bridges
+        if: success()
+        run: python scripts/refresh_source_bridges.py --db data/nayvadius.db --output output/source_bridge_report.json
       - name: Commit knowledge
         if: always()
         run: |
