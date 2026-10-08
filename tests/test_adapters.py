@@ -69,3 +69,14 @@ def test_jacques_record_keeps_source_provenance():
     assert result.document.source == "jacques"
     assert result.document.id == "track-provenance"
     assert result.document.metadata["jacques"]["analysis"]["bpm"] == 120
+
+
+def test_jacques_record_exposes_source_identity():
+    from nayvadius.adapters import parse_jacques_track
+    result = parse_jacques_track({
+        "track_id": "track-source-id",
+        "title": "Source Identity",
+        "artists": "Artist",
+    })
+    assert result.document.metadata["source"] == "jacques"
+    assert result.document.metadata["source_id"] == "track-source-id"
