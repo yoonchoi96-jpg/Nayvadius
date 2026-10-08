@@ -4,11 +4,6 @@ from nayvadius.source_bridges import derive_source_bridge_links
 
 def test_refresh_source_bridges_uses_only_shared_canonical_provenance(tmp_path):
     db = connect(tmp_path / "test.db")
-    db.execute(
-        """CREATE TABLE entity_sources(
-            entity_name TEXT, entity_type TEXT, source TEXT, document_id TEXT
-        )"""
-    )
     db.executemany(
         "INSERT INTO entity_sources VALUES(?,?,?,?)",
         [
