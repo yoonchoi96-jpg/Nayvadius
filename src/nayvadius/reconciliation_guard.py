@@ -138,6 +138,7 @@ def validate_db_reconciliation_plan(plan: dict, root: str | Path | None = None) 
     summary = plan.get("summary", {})
     if not isinstance(summary, dict):
         errors.append("summary must be an object")
+        summary = {}
     else:
         if summary.get("auto") != len(plan.get("auto", [])):
             errors.append("summary.auto does not match auto length")
@@ -156,14 +157,15 @@ def validate_db_reconciliation_plan(plan: dict, root: str | Path | None = None) 
 
             diff_keys = ("added", "deleted", "modified", "moved")
             diff_counts = {}
-            for key in diff_keys:
+            present_diff_keys = [key for key in diff_keys if key in diff]
+            for key in present_diff_keys:
                 values = diff.get(key)
                 if not isinstance(values, list):
                     errors.append(f"diff.{key} must be a list")
                 else:
                     diff_counts[key] = len(values)
 
-            if all(key in diff_counts for key in diff_keys):
+            if len(present_diff_keys) == len(diff_keys) and all(key in diff_counts for key in diff_keys):
                 calculated_changed = sum(diff_counts.values())
                 if diff_summary.get("changed") != calculated_changed:
                     errors.append("diff.summary.changed does not match diff item counts")
