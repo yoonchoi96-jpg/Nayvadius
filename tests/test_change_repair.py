@@ -1,3 +1,4 @@
+from pathlib import Path
 
 def test_change_repair_plan_auto_moves_and_reviews_other_changes(tmp_path: Path):
     from nayvadius.change_repair import build_change_repair_plan
