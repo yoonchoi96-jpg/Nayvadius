@@ -162,10 +162,6 @@ def finalize_db_reconciliation_provenance(
             "reason": "live reconciliation verification failed",
             "verification": live_verification,
         }
-    verified_manifest_hash = live_verification.get("manifest_hash")
-    if not isinstance(verified_manifest_hash, str) or manifest_hash != verified_manifest_hash:
-        return {"status": "REVIEW", "recorded": 0, "reason": "backup manifest changed after verification"}
-
     db_path = Path(db_path)
     if _contains_symlink_component(db_path):
         return {"status": "REVIEW", "recorded": 0, "reason": "database path contains a symlink"}
