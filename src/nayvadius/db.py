@@ -2,11 +2,12 @@ import json, sqlite3
 from pathlib import Path
 from .config import settings
 
-SCHEMA="""CREATE TABLE IF NOT EXISTS documents(id TEXT PRIMARY KEY,title TEXT NOT NULL,content_hash TEXT NOT NULL,source TEXT NOT NULL,status TEXT NOT NULL,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,content TEXT NOT NULL DEFAULT '');CREATE TABLE IF NOT EXISTS results(document_id TEXT PRIMARY KEY,payload TEXT NOT NULL);CREATE TABLE IF NOT EXISTS entities(name TEXT NOT NULL,entity_type TEXT NOT NULL,aliases TEXT,confidence REAL NOT NULL,PRIMARY KEY(name,entity_type));CREATE TABLE IF NOT EXISTS document_entities(document_id TEXT NOT NULL,entity_name TEXT NOT NULL,entity_type TEXT NOT NULL,confidence REAL NOT NULL,PRIMARY KEY(document_id,entity_name,entity_type));CREATE TABLE IF NOT EXISTS relations(source_name TEXT NOT NULL,relation TEXT NOT NULL,target_name TEXT NOT NULL,confidence REAL NOT NULL,PRIMARY KEY(source_name,relation,target_name));CREATE TABLE IF NOT EXISTS document_relations(document_id TEXT NOT NULL,source_name TEXT NOT NULL,relation TEXT NOT NULL,target_name TEXT NOT NULL,confidence REAL NOT NULL,PRIMARY KEY(document_id,source_name,relation,target_name));CREATE TABLE IF NOT EXISTS evidence(document_id TEXT PRIMARY KEY,source TEXT NOT NULL,title TEXT NOT NULL,content TEXT NOT NULL,url TEXT,checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS relation_evidence(document_id TEXT NOT NULL,source_name TEXT NOT NULL,relation TEXT NOT NULL,target_name TEXT NOT NULL,evidence_document_id TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'checked',checked_at TEXT,PRIMARY KEY(document_id,source_name,relation,target_name,evidence_document_id));CREATE TABLE IF NOT EXISTS llm_cache(cache_key TEXT PRIMARY KEY,payload TEXT NOT NULL);CREATE TABLE IF NOT EXISTS entity_aliases(alias TEXT NOT NULL,canonical_name TEXT NOT NULL,entity_type TEXT NOT NULL,PRIMARY KEY(alias,entity_type));CREATE TABLE IF NOT EXISTS entity_sources(entity_name TEXT NOT NULL,entity_type TEXT NOT NULL,source TEXT NOT NULL,document_id TEXT NOT NULL,PRIMARY KEY(entity_name,entity_type,source,document_id));CREATE TABLE IF NOT EXISTS entity_merge_log(id INTEGER PRIMARY KEY AUTOINCREMENT,canonical_name TEXT NOT NULL,duplicate_name TEXT NOT NULL,entity_type TEXT NOT NULL,reason TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS processing_failures(document_id TEXT PRIMARY KEY,attempts INTEGER NOT NULL DEFAULT 0,last_error TEXT NOT NULL,next_retry_at TEXT,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS vocabularies(id TEXT PRIMARY KEY,word TEXT NOT NULL,traditional TEXT,pinyin TEXT,pos TEXT,meaning_ko TEXT,hsk_levels TEXT,wordbooks TEXT,source TEXT NOT NULL,metadata TEXT NOT NULL DEFAULT '{}',updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS vocabulary_aliases(alias TEXT PRIMARY KEY,canonical_id TEXT NOT NULL);CREATE TABLE IF NOT EXISTS entity_vocabulary_links(entity_name TEXT NOT NULL,entity_type TEXT NOT NULL,vocabulary_id TEXT NOT NULL,match_type TEXT NOT NULL DEFAULT 'explicit',confidence REAL NOT NULL DEFAULT 1.0,PRIMARY KEY(entity_name,entity_type,vocabulary_id));CREATE TABLE IF NOT EXISTS document_vocabulary_links(document_id TEXT NOT NULL,vocabulary_id TEXT NOT NULL,match_type TEXT NOT NULL DEFAULT 'exact',confidence REAL NOT NULL DEFAULT 1.0,PRIMARY KEY(document_id,vocabulary_id));CREATE TABLE IF NOT EXISTS vocabulary_sources(vocabulary_id TEXT NOT NULL,source_id TEXT NOT NULL,source TEXT NOT NULL,metadata TEXT NOT NULL DEFAULT '{}',PRIMARY KEY(vocabulary_id,source_id));"""
+SCHEMA="""CREATE TABLE IF NOT EXISTS documents(id TEXT PRIMARY KEY,title TEXT NOT NULL,content_hash TEXT NOT NULL,source TEXT NOT NULL,status TEXT NOT NULL,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,content TEXT NOT NULL DEFAULT '',metadata TEXT NOT NULL DEFAULT '{}');CREATE TABLE IF NOT EXISTS document_sources(source TEXT NOT NULL,source_id TEXT NOT NULL,document_id TEXT NOT NULL,metadata TEXT NOT NULL DEFAULT '{}',first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(source,source_id));CREATE TABLE IF NOT EXISTS results(document_id TEXT PRIMARY KEY,payload TEXT NOT NULL);CREATE TABLE IF NOT EXISTS entities(name TEXT NOT NULL,entity_type TEXT NOT NULL,aliases TEXT,confidence REAL NOT NULL,PRIMARY KEY(name,entity_type));CREATE TABLE IF NOT EXISTS document_entities(document_id TEXT NOT NULL,entity_name TEXT NOT NULL,entity_type TEXT NOT NULL,confidence REAL NOT NULL,PRIMARY KEY(document_id,entity_name,entity_type));CREATE TABLE IF NOT EXISTS relations(source_name TEXT NOT NULL,relation TEXT NOT NULL,target_name TEXT NOT NULL,confidence REAL NOT NULL,PRIMARY KEY(source_name,relation,target_name));CREATE TABLE IF NOT EXISTS document_relations(document_id TEXT NOT NULL,source_name TEXT NOT NULL,relation TEXT NOT NULL,target_name TEXT NOT NULL,confidence REAL NOT NULL,PRIMARY KEY(document_id,source_name,relation,target_name));CREATE TABLE IF NOT EXISTS evidence(document_id TEXT PRIMARY KEY,source TEXT NOT NULL,title TEXT NOT NULL,content TEXT NOT NULL,url TEXT,checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS relation_evidence(document_id TEXT NOT NULL,source_name TEXT NOT NULL,relation TEXT NOT NULL,target_name TEXT NOT NULL,evidence_document_id TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'checked',checked_at TEXT,PRIMARY KEY(document_id,source_name,relation,target_name,evidence_document_id));CREATE TABLE IF NOT EXISTS llm_cache(cache_key TEXT PRIMARY KEY,payload TEXT NOT NULL);CREATE TABLE IF NOT EXISTS entity_aliases(alias TEXT NOT NULL,canonical_name TEXT NOT NULL,entity_type TEXT NOT NULL,PRIMARY KEY(alias,entity_type));CREATE TABLE IF NOT EXISTS entity_sources(entity_name TEXT NOT NULL,entity_type TEXT NOT NULL,source TEXT NOT NULL,document_id TEXT NOT NULL,PRIMARY KEY(entity_name,entity_type,source,document_id));CREATE TABLE IF NOT EXISTS entity_merge_log(id INTEGER PRIMARY KEY AUTOINCREMENT,canonical_name TEXT NOT NULL,duplicate_name TEXT NOT NULL,entity_type TEXT NOT NULL,reason TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS processing_failures(document_id TEXT PRIMARY KEY,attempts INTEGER NOT NULL DEFAULT 0,last_error TEXT NOT NULL,next_retry_at TEXT,updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS vocabularies(id TEXT PRIMARY KEY,word TEXT NOT NULL,traditional TEXT,pinyin TEXT,pos TEXT,meaning_ko TEXT,hsk_levels TEXT,wordbooks TEXT,source TEXT NOT NULL,metadata TEXT NOT NULL DEFAULT '{}',updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS vocabulary_aliases(alias TEXT PRIMARY KEY,canonical_id TEXT NOT NULL);CREATE TABLE IF NOT EXISTS entity_vocabulary_links(entity_name TEXT NOT NULL,entity_type TEXT NOT NULL,vocabulary_id TEXT NOT NULL,match_type TEXT NOT NULL DEFAULT 'explicit',confidence REAL NOT NULL DEFAULT 1.0,PRIMARY KEY(entity_name,entity_type,vocabulary_id));CREATE TABLE IF NOT EXISTS document_vocabulary_links(document_id TEXT NOT NULL,vocabulary_id TEXT NOT NULL,match_type TEXT NOT NULL DEFAULT 'exact',confidence REAL NOT NULL DEFAULT 1.0,PRIMARY KEY(document_id,vocabulary_id));CREATE TABLE IF NOT EXISTS vocabulary_sources(vocabulary_id TEXT NOT NULL,source_id TEXT NOT NULL,source TEXT NOT NULL,metadata TEXT NOT NULL DEFAULT '{}',PRIMARY KEY(vocabulary_id,source_id));"""
 
 def connect(path=None):
  p=Path(path or settings.state_path); p.parent.mkdir(parents=True,exist_ok=True); c=sqlite3.connect(p,timeout=30); c.execute("PRAGMA journal_mode=WAL"); c.execute("PRAGMA busy_timeout=30000"); c.execute("PRAGMA foreign_keys=ON"); c.executescript(SCHEMA)
  _migrate_document_content(c)
+ _migrate_document_metadata(c)
  _migrate_entity_types(c)
  return c
 
@@ -15,6 +16,35 @@ def _migrate_document_content(db):
     columns = {row[1] for row in db.execute("PRAGMA table_info(documents)")}
     if "content" not in columns:
         db.execute("ALTER TABLE documents ADD COLUMN content TEXT NOT NULL DEFAULT ''")
+
+
+def _migrate_document_metadata(db):
+    columns = {row[1] for row in db.execute("PRAGMA table_info(documents)")}
+    if "metadata" not in columns:
+        db.execute("ALTER TABLE documents ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'")
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS document_sources("
+        "source TEXT NOT NULL,source_id TEXT NOT NULL,document_id TEXT NOT NULL,"
+        "metadata TEXT NOT NULL DEFAULT '{}',first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+        "last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(source,source_id))"
+    )
+
+
+def save_document_source(document_id, source, source_id, metadata=None):
+    if not source or not source_id:
+        return False
+    payload = json.dumps(metadata or {}, ensure_ascii=False, sort_keys=True)
+    with connect() as db:
+        db.execute(
+            """INSERT INTO document_sources(source,source_id,document_id,metadata)
+               VALUES(?,?,?,?)
+               ON CONFLICT(source,source_id) DO UPDATE SET
+               document_id=excluded.document_id,
+               metadata=excluded.metadata,
+               last_seen_at=CURRENT_TIMESTAMP""",
+            (str(source), str(source_id), str(document_id), payload),
+        )
+    return True
 
 
 def _migrate_entity_types(db):
