@@ -61,12 +61,15 @@ def parse_abraham_document(raw: dict) -> ProcessedDocument:
     if not doc_id or not content:
         raise ValueError("Abraham record requires id and non-empty content")
 
+    metadata = dict(raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {})
+    metadata.setdefault("source", str(raw.get("source") or "abraham"))
+    metadata.setdefault("source_id", str(metadata.get("external_id") or doc_id))
     doc = Document(
         doc_id,
         str(raw.get("title") or doc_id),
         content,
         str(raw.get("source") or "abraham"),
-        raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {},
+        metadata,
     )
     entities = [x for x in (_entity(v) for v in _clean_list(raw.get("entities"))) if x]
     relations = [x for x in (_relation(v) for v in _clean_list(raw.get("relations"))) if x]
@@ -127,6 +130,9 @@ def parse_abel_record(raw: dict) -> Vocabulary:
         books = [books] if books else []
     levels = tuple(str(x).strip() for x in levels if str(x).strip())
     books = tuple(str(x).strip() for x in books if str(x).strip())
+    metadata = dict(raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {})
+    metadata.setdefault("source", str(raw.get("source") or "abel"))
+    metadata.setdefault("source_id", str(raw.get("source_id") or raw.get("external_id") or vid))
     return Vocabulary(
         id=vid,
         word=word,
@@ -137,7 +143,7 @@ def parse_abel_record(raw: dict) -> Vocabulary:
         hsk_levels=levels,
         wordbooks=books,
         source=str(raw.get("source") or "abel"),
-        metadata=raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {},
+        metadata=metadata,
     )
 
 
