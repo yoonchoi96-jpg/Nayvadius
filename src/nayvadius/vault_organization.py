@@ -127,6 +127,8 @@ def apply_vault_organization_plan(
 ) -> dict:
     """Apply only AUTO moves from a hash-validated plan, with backups and rollback."""
     root = Path(root)
+    if "plan_version" not in plan and not plan.get("moves"):
+        return {"status": "REVIEW", "applied": [], "skipped": [{"reason": "invalid or legacy plan schema"}], "changed": 0}
     if "plan_version" in plan and plan.get("plan_version") != PLAN_VERSION:
         return {"status": "REVIEW", "applied": [], "skipped": [{"reason": "invalid or legacy plan schema"}], "changed": 0}
     if "fingerprint" in plan:
