@@ -311,6 +311,31 @@ def test_finalizer_rejects_unsafe_manifest_move_path(tmp_path: Path):
     assert result["reason"] == "manifest move 0 has unsafe path"
 
 
+
+
+def test_finalizer_rejects_unsafe_manifest_move_backup_path(tmp_path: Path):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    content_hash = hashlib.sha256(b"same").hexdigest()
+    manifest = vault / "manifest.json"
+    manifest.write_text(json.dumps({"operations": [{
+        "operation": "move",
+        "original_path": "old.md",
+        "new_path": "new.md",
+        "backup_path": "../backup/old.md",
+        "original_hash": content_hash,
+    }]}))
+    result = finalize_db_reconciliation_provenance(
+        tmp_path / "state.db",
+        vault,
+        {"status": "APPLIED", "backup_manifest": "manifest.json", "applied": []},
+        {"status": "VERIFIED"},
+        apply=False,
+    )
+    assert result["status"] == "REVIEW"
+    assert result["recorded"] == 0
+    assert result["reason"] == "manifest move 0 has unsafe path"
+
 def test_finalizer_rejects_unsafe_manifest_rewrite_path(tmp_path: Path):
     vault = tmp_path / "vault"
     vault.mkdir()
