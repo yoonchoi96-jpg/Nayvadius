@@ -1,6 +1,7 @@
 from .db import connect, save_vocabulary, save_vocabulary_alias, save_vocabulary_source, resolve_vocabulary_id, link_document_vocabularies, merge_vocabulary, save_document_source
 from .models import Vocabulary
 from .hash import content_hash
+from .source_contract import validate_source_identity
 from .vocabulary_matcher import VocabularyMatcher
 import json
 import re
@@ -237,7 +238,8 @@ def upsert_document(doc, force=False):
         old = db.execute("SELECT content_hash FROM documents WHERE id=?", (doc.id,)).fetchone()
         if old and old[0] == h and not force:
             return False
-        metadata = dict(doc.metadata or {})
+        identity = validate_source_identity(doc)
+        metadata = dict(identity.metadata)
         metadata_json = json.dumps(metadata, ensure_ascii=False, sort_keys=True)
         db.execute(
             """INSERT INTO documents(id,title,content_hash,source,status,content,metadata)
@@ -248,9 +250,7 @@ def upsert_document(doc, force=False):
                metadata=excluded.metadata, updated_at=CURRENT_TIMESTAMP""",
             (doc.id, doc.title, h, doc.source, doc.content, metadata_json),
         )
-    source_id = metadata.get("source_id") or metadata.get("external_id")
-    if source_id:
-        save_document_source(doc.id, doc.source, source_id, metadata)
+    save_document_source(doc.id, identity.source, identity.source_id, metadata)
     return True
 
 def save_result(result):
