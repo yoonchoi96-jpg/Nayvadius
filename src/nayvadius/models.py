@@ -44,9 +44,9 @@ class Vocabulary:
 @dataclass(frozen=True)
 class ProcessedDocument:
     document: Document
-    summary: str
-    entities: list[Entity]
-    tags: list[str]
+    summary: str = ""
+    entities: list[Entity] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
     related_ids: list[str] = field(default_factory=list)
     relations: list[Relation] = field(default_factory=list)
     importance: float = 0.5
