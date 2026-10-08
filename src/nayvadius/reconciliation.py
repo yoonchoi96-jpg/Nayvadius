@@ -103,22 +103,38 @@ def _db_identity_index(db_path: str | Path) -> dict:
 
 
 def _vault_entity_index(root):
-    entities, _, _ = _entity_files(Path(root))
+    root = Path(root)
+    entities, _, _ = _entity_files(root)
     index = {}
     for entity in entities:
         for value in [entity["name"], *entity["aliases"].values()]:
             index.setdefault((entity["domain"], normalize_entity_name(value)), []).append(entity)
+    # Reconciliation must still be able to reason about minimal entity fixtures
+    # whose frontmatter is incomplete; path/domain remains deterministic.
+    entity_root = root / "entities"
+    if entity_root.is_dir():
+        for path in sorted(entity_root.rglob("*.md")):
+            rel = path.relative_to(root).as_posix()
+            parts = Path(rel).parts
+            if len(parts) != 3:
+                continue
+            domain, name = parts[1], path.stem
+            if not name:
+                continue
+            canonical_domain = {"Companies": "Organizations", "Brands": "Organizations"}.get(domain, domain)
+            key = (canonical_domain, normalize_entity_name(name))
+            if not any(x.get("relative") == rel for x in index.get(key, [])):
+                record = {"name": name, "domain": canonical_domain, "relative": rel, "path": path, "aliases": {}, "fields": {}, "text": path.read_text(encoding="utf-8")}
+                index.setdefault(key, []).append(record)
     return index
 
 
 def _vault_canonical_index(root):
-    entities, _, _ = _entity_files(Path(root))
     index = {}
-    for entity in entities:
-        index.setdefault(
-            (entity["domain"], normalize_entity_name(entity["name"])),
-            [],
-        ).append(entity)
+    for (domain, key), items in _vault_entity_index(root).items():
+        for entity in items:
+            if normalize_entity_name(entity["name"]) == key:
+                index.setdefault((domain, key), []).append(entity)
     return index
 
 
