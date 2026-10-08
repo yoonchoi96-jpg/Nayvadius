@@ -23,3 +23,32 @@ def test_reprocessing_removes_stale_entity_provenance(tmp_path: Path, monkeypatc
         assert db.execute("SELECT content FROM documents WHERE id='d1'").fetchone() == ("content",)
         assert db.execute("SELECT entity_name FROM entity_sources ORDER BY entity_name").fetchall() == [("New Person",)]
         assert db.execute("SELECT entity_name FROM document_entities ORDER BY entity_name").fetchall() == [("New Person",)]
+
+
+def test_document_metadata_and_source_provenance(tmp_path: Path, monkeypatch):
+    db_path = tmp_path / "state.db"
+    monkeypatch.setattr("nayvadius.db.settings.state_path", db_path)
+
+    doc = Document(
+        "d2", "External article", "body", source="readwise",
+        metadata={
+            "source_id": "reader-123",
+            "url": "https://example.test/article",
+            "plugin_version": "1.2.3",
+            "extra": {"author": "A"},
+        },
+    )
+    assert upsert_document(doc, force=True) is True
+
+    with connect(db_path) as db:
+        metadata = db.execute(
+            "SELECT metadata FROM documents WHERE id='d2'"
+        ).fetchone()[0]
+        source = db.execute(
+            "SELECT source,source_id,document_id,metadata FROM document_sources"
+        ).fetchone()
+
+    import json
+    assert json.loads(metadata)["plugin_version"] == "1.2.3"
+    assert source[0:3] == ("readwise", "reader-123", "d2")
+    assert json.loads(source[3])["url"] == "https://example.test/article"
