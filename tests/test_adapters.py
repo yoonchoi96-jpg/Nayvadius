@@ -80,3 +80,26 @@ def test_jacques_record_exposes_source_identity():
     })
     assert result.document.metadata["source"] == "jacques"
     assert result.document.metadata["source_id"] == "track-source-id"
+
+
+def test_abraham_record_exposes_source_identity():
+    from nayvadius.adapters import parse_abraham_document
+    result = parse_abraham_document({
+        "id": "abraham-1",
+        "title": "Source Contract",
+        "content": "body",
+        "source": "abraham",
+    })
+    assert result.document.metadata["source"] == "abraham"
+    assert result.document.metadata["source_id"] == "abraham-1"
+
+
+def test_abel_record_exposes_source_identity():
+    from nayvadius.adapters import parse_abel_record
+    result = parse_abel_record({
+        "id": "abel-1",
+        "word": "维护",
+        "source": "abel",
+    })
+    assert result.metadata["source"] == "abel"
+    assert result.metadata["source_id"] == "abel-1"
