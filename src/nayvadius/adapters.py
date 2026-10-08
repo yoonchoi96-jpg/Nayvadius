@@ -204,6 +204,8 @@ def parse_jacques_track(raw: dict) -> ProcessedDocument:
     metadata = {
         "jacques": {k: v for k, v in raw.items() if k not in {"track_id", "title", "artists", "album", "release_date", "spotify_url"}}
     }
+    metadata["source_id"] = track_id
+    metadata["source"] = "jacques"
     doc = Document(track_id, title, content, "jacques", metadata)
     return ProcessedDocument(
         doc,
