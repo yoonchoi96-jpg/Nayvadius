@@ -67,17 +67,6 @@ def finalize_db_reconciliation_provenance(
     if apply_result.get("skipped"):
         return {"status": "REVIEW", "recorded": 0, "reason": "pending reconciliation items remain"}
 
-    from .db_reconciliation_apply import verify_db_reconciliation_apply
-
-    live_verification = verify_db_reconciliation_apply(vault_root, apply_result)
-    if live_verification.get("status") != "VERIFIED":
-        return {
-            "status": "REVIEW",
-            "recorded": 0,
-            "reason": "live reconciliation verification failed",
-            "verification": live_verification,
-        }
-
     entries = apply_result.get("applied", [])
     if not isinstance(entries, list):
         return {"status": "FAIL", "recorded": 0, "reason": "invalid applied entries"}
@@ -143,6 +132,20 @@ def finalize_db_reconciliation_provenance(
             return {"status": "REVIEW", "recorded": 0, "reason": f"unsupported manifest operation: {kind!r}"}
     if len(move_keys) != move_count:
         return {"status": "REVIEW", "recorded": 0, "reason": "manifest contains duplicate move operations"}
+
+    # Dry-run finalization is purely a validation/reporting operation.
+    if not apply:
+        return {"status": "PLANNED", "recorded": len(entries), "entries": entries, "manifest": manifest_rel}
+
+    from .db_reconciliation_apply import verify_db_reconciliation_apply
+    live_verification = verify_db_reconciliation_apply(vault_root, apply_result)
+    if live_verification.get("status") != "VERIFIED":
+        return {
+            "status": "REVIEW",
+            "recorded": 0,
+            "reason": "live reconciliation verification failed",
+            "verification": live_verification,
+        }
 
     validated = []
     for entry in entries:
