@@ -238,9 +238,13 @@ def verify_db_reconciliation_apply(root: str | Path, result: dict) -> dict:
         if kind == "move":
             original_path = operation.get("original_path")
             new_path = operation.get("new_path")
+            backup_path = operation.get("backup_path")
             original_hash = operation.get("original_hash")
             if not isinstance(original_path, str) or not isinstance(new_path, str):
                 errors.append("manifest move contains invalid path types")
+                continue
+            if not isinstance(backup_path, str):
+                errors.append("manifest move contains invalid backup path")
                 continue
             if not isinstance(original_hash, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", original_hash):
                 errors.append("manifest move contains invalid hash")
@@ -303,13 +307,24 @@ def verify_db_reconciliation_apply(root: str | Path, result: dict) -> dict:
         if kind == "move":
             source = _safe_relative(root, operation.get("original_path", ""))
             target = _safe_relative(root, operation.get("new_path", ""))
+            backup = _safe_relative(root, operation.get("backup_path", ""))
             original_hash = operation.get("original_hash")
             if not isinstance(original_hash, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", original_hash):
                 errors.append(f"move has invalid original hash: {operation.get('original_path')}")
                 continue
-            if source is None or target is None or _contains_symlink(root, source) or _contains_symlink(root, target):
-                errors.append("manifest contains an unsafe or symlinked move path")
+            if (
+                source is None
+                or target is None
+                or backup is None
+                or _contains_symlink(root, source)
+                or _contains_symlink(root, target)
+                or _contains_symlink(root, backup)
+                or not backup.is_file()
+            ):
+                errors.append("manifest contains an unsafe, symlinked, or missing move backup path")
                 continue
+            if _sha256(backup.read_bytes()) != original_hash:
+                errors.append(f"move backup hash mismatch: {operation.get('original_path')}")
             if source.exists():
                 errors.append(f"source still exists: {operation.get('original_path')}")
             if not target.is_file():

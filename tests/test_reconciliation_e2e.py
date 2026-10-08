@@ -83,6 +83,34 @@ def test_full_db_vault_reconciliation_lifecycle(tmp_path: Path):
 
 
 
+
+
+def test_verify_rejects_tampered_move_backup(tmp_path: Path):
+    manifest = tmp_path / "manifest.json"
+    content_hash = _hash("same")
+    backup = tmp_path / "backup.md"
+    backup.write_text("same", encoding="utf-8")
+    manifest.write_text(json.dumps({"operations": [{
+        "operation": "move",
+        "original_path": "old.md",
+        "new_path": "new.md",
+        "backup_path": "backup.md",
+        "original_hash": content_hash,
+    }]}), encoding="utf-8")
+    (tmp_path / "new.md").write_text("same", encoding="utf-8")
+    backup.write_text("tampered", encoding="utf-8")
+    result = verify_db_reconciliation_apply(
+        tmp_path,
+        {
+            "status": "APPLIED",
+            "backup_manifest": "manifest.json",
+            "applied": [{"source": "old.md", "target": "new.md", "hash": content_hash}],
+        },
+    )
+    assert result["status"] == "FAIL"
+    assert any("move backup hash mismatch" in error for error in result["errors"])
+
+
 def test_verify_rejects_unhashable_applied_entry_without_crashing(tmp_path: Path):
     manifest = tmp_path / "manifest.json"
     manifest.write_text(json.dumps({"operations": [{
