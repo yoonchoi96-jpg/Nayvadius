@@ -75,3 +75,29 @@ def test_source_priority_and_conflict_record(tmp_path, monkeypatch):
             "FROM source_conflicts"
         ).fetchone()
     assert row == ("d2", "title", "abraham", "abel", "review")
+
+
+def test_source_identity_collision_is_recorded_and_original_mapping_is_preserved(tmp_path, monkeypatch):
+    db_path = tmp_path / "state.db"
+    monkeypatch.setattr("nayvadius.db.settings.state_path", db_path)
+
+    from nayvadius.db import save_document_source
+
+    assert save_document_source("doc-1", "abraham", "external-1", {"version": 1}) is True
+    assert save_document_source("doc-1", "abraham", "external-1", {"version": 2}) is True
+    assert save_document_source("doc-2", "abraham", "external-1", {"version": 3}) is False
+
+    with connect(db_path) as db:
+        source_row = db.execute(
+            "SELECT source_id,document_id,metadata FROM document_sources"
+        ).fetchone()
+        conflict = db.execute(
+            "SELECT document_id,field,existing_value,incoming_value,resolution "
+            "FROM source_conflicts"
+        ).fetchone()
+
+    assert source_row[0:2] == ("external-1", "doc-1")
+    assert '"version": 2' in source_row[2]
+    assert conflict == (
+        "doc-2", "source_identity", "doc-1", "doc-2", "review"
+    )
