@@ -101,12 +101,16 @@ def finalize_db_reconciliation_provenance(
             new_path = op.get("new_path")
             original_hash = op.get("original_hash")
             backup_path = op.get("backup_path")
-            if not isinstance(original_path, str) or not isinstance(new_path, str) or not isinstance(backup_path, str):
+            if not isinstance(original_path, str) or not isinstance(new_path, str):
                 return {"status": "REVIEW", "recorded": 0, "reason": f"manifest move {index} has invalid path types"}
+            if apply and not isinstance(backup_path, str):
+                return {"status": "REVIEW", "recorded": 0, "reason": f"manifest move {index} has invalid backup path"}
+            if not isinstance(backup_path, str):
+                backup_path = "" 
             if (
                 _safe_relative(vault_root, original_path) is None
                 or _safe_relative(vault_root, new_path) is None
-                or _safe_relative(vault_root, backup_path) is None
+                or (apply and _safe_relative(vault_root, backup_path) is None)
             ):
                 return {"status": "REVIEW", "recorded": 0, "reason": f"manifest move {index} has unsafe path"}
             if not isinstance(original_hash, str) or not SHA256_RE.fullmatch(original_hash):
