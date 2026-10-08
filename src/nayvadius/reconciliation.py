@@ -22,9 +22,14 @@ def _db_identity_index(db_path: str | Path) -> dict:
         documents = db.execute(
             "SELECT id, title, content_hash, source FROM documents"
         ).fetchall()
-        entities = db.execute(
-            "SELECT entity_name, entity_type, document_id FROM document_entities"
-        ).fetchall()
+        try:
+            entities = db.execute(
+                "SELECT entity_name, entity_type, document_id FROM document_entities"
+            ).fetchall()
+        except sqlite3.OperationalError as exc:
+            if "no such table" not in str(exc).lower():
+                raise
+            entities = []
         try:
             aliases = db.execute(
                 "SELECT alias, canonical_name, entity_type FROM entity_aliases"
