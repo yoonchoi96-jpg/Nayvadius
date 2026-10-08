@@ -54,7 +54,7 @@ def audit_database(path: str | Path) -> dict[str, Any]:
     findings: list[Finding] = []
 
     required = {
-        "documents", "results", "entities", "document_entities", "relations",
+        "documents", "document_sources", "results", "entities", "document_entities", "relations",
         "document_relations", "evidence", "relation_evidence",
         "entity_aliases", "entity_sources", "entity_merge_log",
         "processing_failures", "vocabularies", "entity_vocabulary_links",
@@ -68,6 +68,20 @@ def audit_database(path: str | Path) -> dict[str, Any]:
         ))
         db.close()
         return _report(path, findings)
+
+    # Every external source identity must point to a real document.
+    orphan_document_sources = db.execute(
+        "SELECT ds.source,ds.source_id,ds.document_id FROM document_sources ds "
+        "LEFT JOIN documents d ON d.id=ds.document_id "
+        "WHERE d.id IS NULL LIMIT 100"
+    ).fetchall()
+    for row in orphan_document_sources:
+        findings.append(_finding(
+            "document_source.orphan", "error",
+            "Document source identity points to a missing document.",
+            source=row["source"], source_id=row["source_id"],
+            document_id=row["document_id"],
+        ))
 
     # Entity ontology / duplicate / confidence checks.
     bad_types = db.execute(
