@@ -47,6 +47,71 @@ def save_document_source(document_id, source, source_id, metadata=None):
     return True
 
 
+SOURCE_PRIORITY_DEFAULT = {
+    "abraham": 100,
+    "jacques": 90,
+    "abel": 90,
+    "nayvadius": 80,
+    "unknown": 0,
+}
+
+
+def source_priority(source):
+    return SOURCE_PRIORITY_DEFAULT.get(str(source or "").casefold(), 10)
+
+
+def compare_source_priority(left_source, right_source):
+    """Return -1/0/1: left source has lower/equal/higher priority."""
+    left = source_priority(left_source)
+    right = source_priority(right_source)
+    return (left > right) - (left < right)
+
+
+def save_document_source(document_id, source, source_id, metadata=None):
+    if not source or not source_id:
+        return False
+    payload = json.dumps(metadata or {}, ensure_ascii=False, sort_keys=True)
+    with connect() as db:
+        db.execute(
+            """INSERT INTO document_sources(source,source_id,document_id,metadata)
+               VALUES(?,?,?,?)
+               ON CONFLICT(source,source_id) DO UPDATE SET
+               document_id=excluded.document_id,
+               metadata=excluded.metadata,
+               last_seen_at=CURRENT_TIMESTAMP""",
+            (str(source), str(source_id), str(document_id), payload),
+        )
+    return True
+
+
+def record_source_conflict(document_id, field, existing_source, incoming_source,
+                           existing_value, incoming_value, resolution="review"):
+    if resolution not in ("review", "existing", "incoming", "merged"):
+        raise ValueError("invalid source conflict resolution: " + str(resolution))
+    with connect() as db:
+        db.execute(
+            """CREATE TABLE IF NOT EXISTS source_conflicts(
+               id INTEGER PRIMARY KEY AUTOINCREMENT,
+               document_id TEXT NOT NULL,
+               field TEXT NOT NULL,
+               existing_source TEXT NOT NULL,
+               incoming_source TEXT NOT NULL,
+               existing_value TEXT NOT NULL,
+               incoming_value TEXT NOT NULL,
+               resolution TEXT NOT NULL,
+               created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"""
+        )
+        db.execute(
+            """INSERT INTO source_conflicts(
+               document_id,field,existing_source,incoming_source,
+               existing_value,incoming_value,resolution)
+               VALUES(?,?,?,?,?,?,?)""",
+            (str(document_id), str(field), str(existing_source),
+             str(incoming_source), json.dumps(existing_value, ensure_ascii=False, sort_keys=True),
+             json.dumps(incoming_value, ensure_ascii=False, sort_keys=True), resolution),
+        )
+
+
 def _migrate_entity_types(db):
     """Migrate legacy Companies/Brands into canonical Organizations."""
     legacy_entities = db.execute(
