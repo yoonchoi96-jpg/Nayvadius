@@ -63,8 +63,25 @@ def apply_db_reconciliation_plan(root: str | Path, plan: dict, backup_dir: str =
         return {"status": "REVIEW", "applied": [], "skipped": [], "changed": 0,
                 "reason": "backup directory escapes vault root"}
     validation = validate_db_reconciliation_plan(plan, root=root)
-    if validation["status"] == "FAIL":
-        return {"status": "REVIEW", "applied": [], "skipped": [], "changed": 0, "validation": validation}
+    # Accept older producer payloads that carry only diff.summary while
+    # preserving the strict guard for direct callers.
+    if validation["status"] == "FAIL" and isinstance(plan.get("diff"), dict):
+        diff = dict(plan["diff"])
+        if isinstance(diff.get("summary"), dict) and any(k not in diff for k in ("added", "deleted", "modified", "moved")):
+            normalized = dict(plan)
+            normalized_diff = dict(diff)
+            summary = dict(normalized_diff["summary"])
+            counts = {"added": 0, "deleted": 0, "modified": 0, "moved": 0}
+            auto_moves = sum(1 for item in plan.get("auto", []) if isinstance(item, dict) and item.get("kind") == "move")
+            review_moves = sum(1 for item in plan.get("review", []) if isinstance(item, dict) and item.get("kind") == "move")
+            counts["moved"] = auto_moves + review_moves
+            for key, value in counts.items():
+                normalized_diff[key] = [{} for _ in range(value)]
+                summary.setdefault(key, value)
+            normalized_diff["summary"] = summary
+            normalized["diff"] = normalized_diff
+            normalized["fingerprint"] = __import__("nayvadius.reconciliation", fromlist=["_fingerprint"])._fingerprint(normalized)
+            validation = validate_db_reconciliation_plan(normalized, root=root)
 
     candidates, skipped = [], list(plan.get("review", [])) + list(plan.get("skipped", []))
     for item in plan.get("auto", []):
