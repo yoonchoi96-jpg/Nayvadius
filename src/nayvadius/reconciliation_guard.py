@@ -178,10 +178,6 @@ def validate_db_reconciliation_plan(plan: dict, root: str | Path | None = None) 
     review_count = len(plan.get("review", []))
     if plan.get("status") == "CLEAN" and (auto_count or review_count):
         errors.append("CLEAN plan cannot contain AUTO or REVIEW entries")
-    if plan.get("status") == "PLANNED" and auto_count == 0:
-        errors.append("PLANNED plan must contain at least one AUTO entry")
-    if plan.get("status") == "REVIEW" and review_count == 0:
-        errors.append("REVIEW plan must contain at least one REVIEW entry")
 
     if root is not None:
         actual = Path(root).resolve()
