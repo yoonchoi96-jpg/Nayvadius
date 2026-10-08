@@ -1,0 +1,6 @@
+{
+  "status": "OK",
+  "db": "data/nayvadius.db",
+  "source_bridge_links": 0,
+  "rule": "shared_canonical_entity"
+}
