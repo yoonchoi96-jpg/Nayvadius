@@ -1,11 +1,6 @@
 name: Nayvadius Abel Vocabulary Sync
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - data/abel_export.csv
-      - data/abel_export.jsonl
   workflow_dispatch:
     inputs:
       input_path:

@@ -1,10 +1,6 @@
 name: Nayvadius Knowledge Pipeline
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - data/abraham_export.jsonl
   workflow_dispatch:
     inputs:
       input_path:
@@ -24,9 +20,6 @@ on:
         required: false
         default: '0'
         type: string
-  schedule:
-    - cron: '17 2 * * *'
-
 concurrency:
   group: nayvadius-state-writer
   cancel-in-progress: false

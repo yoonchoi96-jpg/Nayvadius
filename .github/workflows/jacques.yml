@@ -1,10 +1,6 @@
 name: Nayvadius Jacques Music Sync
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - data/jacques_export.json
   workflow_dispatch:
     inputs:
       input_path:
