@@ -1,6 +1,8 @@
 name: Nayvadius Live Obsidian Sync
 
 on:
+  # Deliberately manual-only: normal development must never wait for the Mac runner.
+  # The live sync is invoked only when the Mac/Obsidian instance is available.
   workflow_dispatch:
 
 concurrency:
