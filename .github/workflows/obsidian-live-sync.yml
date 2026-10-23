@@ -4,6 +4,12 @@ on:
   # Deliberately manual-only: normal development must never wait for the Mac runner.
   # The live sync is invoked only when the Mac/Obsidian instance is available.
   workflow_dispatch:
+    inputs:
+      allow_managed_vault_write:
+        description: 'Explicitly authorize a guarded live sync after QA and human-note protection review'
+        type: boolean
+        required: true
+        default: false
 
 concurrency:
   group: nayvadius-live-obsidian
@@ -32,6 +38,8 @@ jobs:
 
   sync:
     name: Live Obsidian reconciliation
+    needs: validate
+    if: ${{ vars.NAV_OBSIDIAN_SYNC_APPROVED == 'true' && inputs.allow_managed_vault_write == true }}
     # The live vault exists only on the user's Mac.
     runs-on: [self-hosted, macOS, X64]
     timeout-minutes: 30
